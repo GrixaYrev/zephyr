@@ -129,6 +129,7 @@ config SOC_MIMXRT1052
 	bool "SOC_MIMXRT1052"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_RTADC	
 	select HAS_MCUX_CCM
 	select HAS_MCUX_ELCDIF
 	select HAS_MCUX_ENET

@@ -21,6 +21,8 @@
 #define DT_DRV_COMPAT nordic_nrf_adc
 #elif DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_saadc)
 #define DT_DRV_COMPAT nordic_nrf_saadc
+#elif DT_HAS_COMPAT_STATUS_OKAY(nxp_mcux_rtadc)
+#define DT_DRV_COMPAT nxp_mcux_rtadc
 #elif DT_HAS_COMPAT_STATUS_OKAY(nxp_kinetis_adc12)
 #define DT_DRV_COMPAT nxp_kinetis_adc12
 #elif DT_HAS_COMPAT_STATUS_OKAY(nxp_kinetis_adc16)

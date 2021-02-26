@@ -43,6 +43,10 @@ config PWM_MCUX
 	default y if HAS_MCUX_PWM
 	depends on PWM
 
+config ADC_MCUX_RTADC
+	default y
+	depends on ADC
+
 config ETH_MCUX
 	default y if HAS_MCUX_ENET
 	depends on NET_L2_ETHERNET

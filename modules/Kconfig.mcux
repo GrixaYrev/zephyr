@@ -10,6 +10,11 @@ config HAS_MCUX
 
 if HAS_MCUX
 
+config HAS_MCUX_RTADC
+	bool
+	help
+	  Set if the ADC module is present in the RT series SoC.
+
 config HAS_MCUX_ADC12
 	bool
 	help
