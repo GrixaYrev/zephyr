@@ -249,6 +249,7 @@ static const struct adc_driver_api mcux_rt_adc_driver_api = {
 #ifdef CONFIG_ADC_ASYNC
 	.read_async = mcux_rt_adc_read_async,
 #endif
+	.ref_internal = 3300,
 };
 
 #define ASSERT_RT_ADC_CLK_DIV_VALID(val, str)                                  \
