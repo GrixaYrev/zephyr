@@ -251,13 +251,20 @@ static const struct adc_driver_api mcux_rt_adc_driver_api = {
 #endif
 };
 
+#define ASSERT_RT_ADC_CLK_DIV_VALID(val, str)                                  \
+	BUILD_ASSERT(val == 1 || val == 2 || val == 4 || val == 8, str)
+#define TO_RT_ADC_CLOCK_DIV(val) _DO_CONCAT(kADC_ClockDriver, val)
+
 #define ACD_MCUX_RT_INIT(n)                                                    \
 	static void mcux_rt_adc_config_func_##n(const struct device *dev);     \
                                                                                \
+	ASSERT_RT_ADC_CLK_DIV_VALID(DT_INST_PROP(n, clk_divider),              \
+				    "Invalid clock divider");                  \
+                                                                               \
 	static const struct mcux_rt_adc_config mcux_rt_adc_config_##n = {      \
 		.base = (ADC_Type *)DT_INST_REG_ADDR(n),                       \
-		.clock_src = kADC_ClockSourceIPG,                              \
-		.clock_drv = kADC_ClockDriver1,                                \
+		.clock_src = kADC_ClockSourceAD,                              \
+		.clock_drv = TO_RT_ADC_CLOCK_DIV(DT_INST_PROP(n, clk_divider)),\
 		.ref_src = kADC_ReferenceVoltageSourceAlt0,                    \
 		.sample_period_mode = kADC_SamplePeriod2or12Clocks,            \
 		.irq_config_func = mcux_rt_adc_config_func_##n,                \
