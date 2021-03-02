@@ -19,6 +19,11 @@ properties:
       required: true
       description: clock divider for the converter      
 
+    sample-period-mode:
+      type: int
+      required: true
+      description: sample period mode
+
     "#io-channel-cells":
       const: 1
 

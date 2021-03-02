@@ -232,8 +232,17 @@ static int mcux_rt_adc_init(const struct device *dev)
 	adc_config.enableAsynchronousClockOutput = true;
 
 	ADC_Init(base, &adc_config);
-	ADC_DoAutoCalibration(base);
+	
+#if !(defined(FSL_FEATURE_ADC_SUPPORT_HARDWARE_TRIGGER_REMOVE) &&              \
+      FSL_FEATURE_ADC_SUPPORT_HARDWARE_TRIGGER_REMOVE)
 	ADC_EnableHardwareTrigger(base, false);
+#endif
+
+	if (kStatus_Success == ADC_DoAutoCalibration(base)) {
+		LOG_DBG("ADC_DoAutoCalibration() Done.");
+	} else {
+		LOG_DBG("ADC_DoAutoCalibration() Failed.");
+	}
 
 	config->irq_config_func(dev);
 	data->dev = dev;
@@ -252,6 +261,8 @@ static const struct adc_driver_api mcux_rt_adc_driver_api = {
 	.ref_internal = 3300,
 };
 
+#define ASSERT_WITHIN_RANGE(val, min, max, str)                                \
+	BUILD_ASSERT(val >= min && val <= max, str)
 #define ASSERT_RT_ADC_CLK_DIV_VALID(val, str)                                  \
 	BUILD_ASSERT(val == 1 || val == 2 || val == 4 || val == 8, str)
 #define TO_RT_ADC_CLOCK_DIV(val) _DO_CONCAT(kADC_ClockDriver, val)
@@ -261,13 +272,16 @@ static const struct adc_driver_api mcux_rt_adc_driver_api = {
                                                                                \
 	ASSERT_RT_ADC_CLK_DIV_VALID(DT_INST_PROP(n, clk_divider),              \
 				    "Invalid clock divider");                  \
+	ASSERT_WITHIN_RANGE(DT_INST_PROP(n, sample_period_mode), 0, 3,         \
+			    "Invalid sample period mode");                     \
                                                                                \
 	static const struct mcux_rt_adc_config mcux_rt_adc_config_##n = {      \
 		.base = (ADC_Type *)DT_INST_REG_ADDR(n),                       \
-		.clock_src = kADC_ClockSourceAD,                              \
-		.clock_drv = TO_RT_ADC_CLOCK_DIV(DT_INST_PROP(n, clk_divider)),\
+		.clock_src = kADC_ClockSourceAD,                               \
+		.clock_drv =                                                   \
+			TO_RT_ADC_CLOCK_DIV(DT_INST_PROP(n, clk_divider)),     \
 		.ref_src = kADC_ReferenceVoltageSourceAlt0,                    \
-		.sample_period_mode = kADC_SamplePeriod2or12Clocks,            \
+		.sample_period_mode = DT_INST_PROP(n, sample_period_mode),     \
 		.irq_config_func = mcux_rt_adc_config_func_##n,                \
 	};                                                                     \
                                                                                \
