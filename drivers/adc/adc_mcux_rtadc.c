@@ -3,6 +3,7 @@
  *
  * Based on adc_mcux_rt_adc.c, which is:
  * Copyright (c) 2017-2018, NXP
+ * Copyright (c) 2021, STRIM
  *
  * SPDX-License-Identifier: Apache-2.0
  */
