@@ -232,26 +232,72 @@ static void mcux_elcdif_config_func_1(const struct device *dev);
 static struct mcux_elcdif_config mcux_elcdif_config_1 = {
 	.base = (LCDIF_Type *) DT_INST_REG_ADDR(0),
 	.irq_config_func = mcux_elcdif_config_func_1,
-#ifdef CONFIG_MCUX_ELCDIF_PANEL_RK043FN02H
 	.rgb_mode = {
-		.panelWidth = 480,
-		.panelHeight = 272,
-		.hsw = 41,
-		.hfp = 4,
-		.hbp = 8,
-		.vsw = 10,
-		.vfp = 4,
-		.vbp = 2,
-		.polarityFlags = kELCDIF_DataEnableActiveHigh |
-				 kELCDIF_VsyncActiveLow |
-				 kELCDIF_HsyncActiveLow |
-				 kELCDIF_DriveDataOnRisingClkEdge,
-		.pixelFormat = kELCDIF_PixelFormatRGB565,
-		.dataBus = kELCDIF_DataBus16Bit,
+		.panelWidth = CONFIG_MCUX_ELCDIF_PANEL_RGB_WIDTH,
+		.panelHeight = CONFIG_MCUX_ELCDIF_PANEL_RGB_HEIGHT,
+		.hsw = CONFIG_MCUX_ELCDIF_PANEL_RGB_HSW,
+		.hfp = CONFIG_MCUX_ELCDIF_PANEL_RGB_HFP,
+		.hbp = CONFIG_MCUX_ELCDIF_PANEL_RGB_HBP,
+		.vsw = CONFIG_MCUX_ELCDIF_PANEL_RGB_VSW,
+		.vfp = CONFIG_MCUX_ELCDIF_PANEL_RGB_VFP,
+		.vbp = CONFIG_MCUX_ELCDIF_PANEL_RGB_VBP,
+		.polarityFlags = 
+      #ifdef  CONFIG_MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_DE_HIGH
+        kELCDIF_DataEnableActiveHigh |
+      #else
+        kELCDIF_DataEnableActiveLow |
+      #endif
+      #ifdef CONFIG_MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_VSYNC_HIGH
+				kELCDIF_VsyncActiveHigh |
+      #else
+				kELCDIF_VsyncActiveLow |
+      #endif
+      #ifdef CONFIG_MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_HSYNC_HIGH
+				kELCDIF_HsyncActiveLow |
+      #else 
+      #endif
+      #ifdef CONFIG_MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_CLKEDGE_RISING
+				kELCDIF_DriveDataOnRisingClkEdge,
+      #else
+				kELCDIF_DriveDataOnFallingClkEdge,
+      #endif
+		  #if CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RAW8
+      	.pixelFormat = kELCDIF_PixelFormatRAW8,
+      #elif CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT  ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB565
+      	.pixelFormat = kELCDIF_PixelFormatRGB565,
+      #elif CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT  ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB666
+      	.pixelFormat = kELCDIF_PixelFormatRGB666,
+      #elif CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT  ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB8888
+      	.pixelFormat = kELCDIF_PixelFormatXRGB8888,
+      #elif CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT  ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB888
+      	.pixelFormat = kELCDIF_PixelFormatRGB888,
+      #endif
+		  #if     CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS_8
+        .dataBus = kELCDIF_DataBus8Bit,
+      #elif   CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS_16
+        .dataBus = kELCDIF_DataBus16Bit,
+      #elif   CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS_18
+        .dataBus = kELCDIF_DataBus18Bit,
+      #elif   CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS_24
+        .dataBus = kELCDIF_DataBus24Bit,
+      #endif
 	},
+  #if   CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888
+	.pixel_format = PIXEL_FORMAT_RGB_888,
+  #elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_MONO01
+ 	.pixel_format = PIXEL_FORMAT_MONO01,
+  #elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_MONO10
+	.pixel_format = PIXEL_FORMAT_MONO10,
+  #elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_ARGB8888
+	.pixel_format = PIXEL_FORMAT_ARGB_8888,
+  #elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565
+	.pixel_format = PIXEL_FORMAT_RGB_565,
+  #elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
 	.pixel_format = PIXEL_FORMAT_BGR_565,
-	.bits_per_pixel = 16,
-#endif
+  #endif
+  #ifdef CONFIG_MCUX_ELCDIF_PANEL_BITS_IN_PIXEL
+	.bits_per_pixel = CONFIG_MCUX_ELCDIF_PANEL_BITS_IN_PIXEL,
+  #endif
 };
 
 static struct mcux_elcdif_data mcux_elcdif_data_1;

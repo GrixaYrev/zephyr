@@ -179,8 +179,16 @@ static ALWAYS_INLINE void clock_init(void)
 
 #ifdef CONFIG_DISPLAY_MCUX_ELCDIF
 	CLOCK_SetMux(kCLOCK_LcdifPreMux, 2);
+#ifdef CONFIG_MCUX_ELCDIF_CLOCK_PRE_DIV
+	CLOCK_SetDiv(kCLOCK_LcdifPreDiv, CONFIG_MCUX_ELCDIF_CLOCK_PRE_DIV);
+#else
 	CLOCK_SetDiv(kCLOCK_LcdifPreDiv, 4);
+#endif
+#ifdef CONFIG_MCUX_ELCDIF_CLOCK_POST_DIV
+	CLOCK_SetDiv(kCLOCK_LcdifDiv, CONFIG_MCUX_ELCDIF_CLOCK_POST_DIV);
+#else
 	CLOCK_SetDiv(kCLOCK_LcdifDiv, 1);
+#endif
 #endif
 
 #if CONFIG_USB_DC_NXP_EHCI
