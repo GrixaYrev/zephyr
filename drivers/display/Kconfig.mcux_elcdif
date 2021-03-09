@@ -239,4 +239,29 @@ config MCUX_ELCDIF_CLOCK_POST_DIV
 
 endmenu   # "Clock settings"
 
+choice MCUX_ELCDIF_PANEL_ORIENTATION
+  prompt "Panel orientation"
+  default MCUX_ELCDIF_PANEL_ORIENTATION_NORMAL
+
+config MCUX_ELCDIF_PANEL_ORIENTATION_NORMAL
+  bool "Normal"
+  help
+    Normal panel orientation
+
+config MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_90
+  bool "Rotated 90"
+  help
+    Panel rotated 90 degrees clockwise
+
+config MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_180
+  bool "Rotated 180"
+  help
+    Panel rotated 180 degrees clockwise
+
+config MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_270
+  bool "Rotated 270"
+  help
+    Panel rotated 270 degrees clockwise (90 counterclockwise)
+endchoice
+
 endif # DISPLAY_MCUX_ELCDIF
