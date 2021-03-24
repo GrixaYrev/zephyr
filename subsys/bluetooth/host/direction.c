@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Nordic Semiconductor ASA
+ * Copyright (c) 2020-2021 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -182,14 +182,14 @@ static int hci_df_set_adv_cte_tx_enable(struct bt_le_ext_adv *adv,
 	cp->handle = adv->handle;
 	cp->cte_enable = enable ? 1 : 0;
 
-	bt_hci_cmd_state_set_init(&state, adv->flags, BT_PER_ADV_CTE_ENABLED,
+	bt_hci_cmd_state_set_init(buf, &state, adv->flags, BT_PER_ADV_CTE_ENABLED,
 				  enable);
-	bt_hci_cmd_data_state_set(buf, &state);
 
 	return bt_hci_cmd_send_sync(BT_HCI_OP_LE_SET_CL_CTE_TX_ENABLE,
 				   buf, NULL);
 }
 
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_RSP)
 /* @brief Function sets CTE parameters for connection object
  *
  * @param[in] cte_types         Allowed response CTE types
@@ -258,6 +258,7 @@ static int hci_df_set_conn_cte_tx_param(struct bt_conn *conn, uint8_t cte_types,
 
 	return err;
 }
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_RSP */
 
 /* @brief Function initializes Direction Finding in Host
  *

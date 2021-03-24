@@ -21,7 +21,9 @@ LOG_MODULE_REGISTER(wifi_esp, CONFIG_WIFI_LOG_LEVEL);
 #include <drivers/gpio.h>
 #include <drivers/uart.h>
 
+#include <net/dns_resolve.h>
 #include <net/net_if.h>
+#include <net/net_ip.h>
 #include <net/net_offload.h>
 #include <net/wifi_mgmt.h>
 
@@ -64,6 +66,20 @@ K_KERNEL_STACK_DEFINE(esp_workq_stack,
 		      CONFIG_WIFI_ESP_WORKQ_STACK_SIZE);
 
 struct esp_data esp_driver_data;
+
+static void esp_configure_hostname(struct esp_data *data)
+{
+#if defined(CONFIG_NET_HOSTNAME_ENABLE)
+	char cmd[sizeof("AT+CWHOSTNAME=\"\"") + NET_HOSTNAME_MAX_LEN];
+
+	snprintk(cmd, sizeof(cmd), "AT+CWHOSTNAME=\"%s\"", net_hostname_get());
+	cmd[sizeof(cmd) - 1] = '\0';
+
+	esp_cmd_send(data, NULL, 0, cmd, ESP_CMD_TIMEOUT);
+#else
+	ARG_UNUSED(data);
+#endif
+}
 
 static inline uint8_t esp_mode_from_flags(struct esp_data *data)
 {
@@ -109,10 +125,25 @@ static int esp_mode_switch(struct esp_data *data, uint8_t mode)
 static int esp_mode_switch_if_needed(struct esp_data *data)
 {
 	uint8_t new_mode = esp_mode_from_flags(data);
+	uint8_t old_mode = data->mode;
+	int err;
 
-	if (data->mode != new_mode) {
-		data->mode = new_mode;
-		return esp_mode_switch(data, new_mode);
+	if (old_mode == new_mode) {
+		return 0;
+	}
+
+	data->mode = new_mode;
+
+	err = esp_mode_switch(data, new_mode);
+	if (err) {
+		return err;
+	}
+
+	if (!(old_mode & ESP_MODE_STA) && (new_mode & ESP_MODE_STA)) {
+		/*
+		 * Hostname change is applied only when STA is enabled.
+		 */
+		esp_configure_hostname(data);
 	}
 
 	return 0;
@@ -254,6 +285,83 @@ MODEM_CMD_DEFINE(on_cmd_cwlap)
 	return 0;
 }
 
+static void esp_dns_work(struct k_work *work)
+{
+	struct esp_data *data = CONTAINER_OF(work, struct esp_data, dns_work);
+	struct dns_resolve_context *dnsctx;
+	struct sockaddr_in *addrs = data->dns_addresses;
+	const struct sockaddr *dns_servers[ESP_MAX_DNS + 1] = {};
+	size_t i;
+	int err;
+
+	for (i = 0; i < ESP_MAX_DNS; i++) {
+		if (!addrs[i].sin_addr.s_addr) {
+			break;
+		}
+		dns_servers[i] = (struct sockaddr *) &addrs[i];
+	}
+
+	dnsctx = dns_resolve_get_default();
+	for (i = 0; i < CONFIG_DNS_NUM_CONCUR_QUERIES; i++) {
+		if (!dnsctx->queries[i].cb) {
+			continue;
+		}
+
+		dns_resolve_cancel(dnsctx, dnsctx->queries[i].id);
+	}
+
+	dns_resolve_close(dnsctx);
+
+	err = dns_resolve_init(dnsctx, NULL, dns_servers);
+	if (err) {
+		LOG_ERR("Could not set DNS servers: %d", err);
+	}
+
+	LOG_DBG("DNS resolver reconfigured");
+}
+
+/* +CIPDNS:enable[,"DNS IP1"[,"DNS IP2"[,"DNS IP3"]]] */
+MODEM_CMD_DEFINE(on_cmd_cipdns)
+{
+	struct esp_data *dev = CONTAINER_OF(data, struct esp_data,
+					    cmd_handler_data);
+	struct sockaddr_in *addrs = dev->dns_addresses;
+	char **servers = (char **)argv + 1;
+	size_t num_servers = argc - 1;
+	size_t valid_servers = 0;
+	size_t i;
+	int err;
+
+	for (i = 0; i < ESP_MAX_DNS; i++) {
+		if (i >= num_servers) {
+			addrs[i].sin_addr.s_addr = 0;
+			break;
+		}
+
+		servers[i] = str_unquote(servers[i]);
+		LOG_DBG("DNS[%zu]: %s", i, log_strdup(servers[i]));
+
+		err = net_addr_pton(AF_INET, servers[i], &addrs[i].sin_addr);
+		if (err) {
+			LOG_ERR("Invalid DNS address: %s",
+				log_strdup(servers[i]));
+			addrs[i].sin_addr.s_addr = 0;
+			break;
+		}
+
+		addrs[i].sin_family = AF_INET;
+		addrs[i].sin_port = htons(53);
+
+		valid_servers++;
+	}
+
+	if (valid_servers) {
+		k_work_submit(&dev->dns_work);
+	}
+
+	return 0;
+}
+
 static const struct modem_cmd response_cmds[] = {
 	MODEM_CMD("OK", on_cmd_ok, 0U, ""), /* 3GPP */
 	MODEM_CMD("ERROR", on_cmd_error, 0U, ""), /* 3GPP */
@@ -327,6 +435,9 @@ static void esp_ip_addr_work(struct k_work *work)
 	static const struct modem_cmd cmds[] = {
 		MODEM_CMD("+"_CIPSTA":", on_cmd_cipsta, 2U, ":"),
 	};
+	static const struct modem_cmd dns_cmds[] = {
+		MODEM_CMD_ARGS_MAX("+CIPDNS:", on_cmd_cipdns, 1U, 3U, ","),
+	};
 
 	ret = esp_cmd_send(dev, cmds, ARRAY_SIZE(cmds), "AT+"_CIPSTA"?",
 			   ESP_CMD_TIMEOUT);
@@ -345,6 +456,14 @@ static void esp_ip_addr_work(struct k_work *work)
 #else
 	net_if_ipv4_addr_add(dev->net_iface, &dev->ip, NET_ADDR_DHCP, 0);
 #endif
+
+	if (IS_ENABLED(CONFIG_WIFI_ESP_DNS_USE)) {
+		ret = esp_cmd_send(dev, dns_cmds, ARRAY_SIZE(dns_cmds),
+				   "AT+CIPDNS?", ESP_CMD_TIMEOUT);
+		if (ret) {
+			LOG_WRN("DNS fetch failed: %d", ret);
+		}
+	}
 }
 
 MODEM_CMD_DEFINE(on_cmd_got_ip)
@@ -398,7 +517,7 @@ MODEM_CMD_DEFINE(on_cmd_closed)
 				ESP_SOCK_CONNECTED, ESP_SOCK_CLOSE_PENDING);
 
 	if (!(old_flags & ESP_SOCK_CONNECTED)) {
-		LOG_WRN("Link %d already closed", link_id);
+		LOG_DBG("Link %d already closed", link_id);
 		goto socket_unref;
 	}
 
@@ -787,20 +906,6 @@ static int esp_mgmt_ap_disable(const struct device *dev)
 	return esp_mode_flags_clear(data, EDF_AP_ENABLED);
 }
 
-static void esp_configure_hostname(struct esp_data *data)
-{
-#if defined(CONFIG_NET_HOSTNAME_ENABLE)
-	char cmd[sizeof("AT+CWHOSTNAME=\"\"") + NET_HOSTNAME_MAX_LEN];
-
-	snprintk(cmd, sizeof(cmd), "AT+CWHOSTNAME=\"%s\"", net_hostname_get());
-	cmd[sizeof(cmd) - 1] = '\0';
-
-	esp_cmd_send(data, NULL, 0, cmd, ESP_CMD_TIMEOUT);
-#else
-	ARG_UNUSED(data);
-#endif
-}
-
 static void esp_init_work(struct k_work *work)
 {
 	struct esp_data *dev;
@@ -891,7 +996,16 @@ static void esp_init_work(struct k_work *work)
 	net_if_set_link_addr(dev->net_iface, dev->mac_addr,
 			     sizeof(dev->mac_addr), NET_LINK_ETHERNET);
 
-	esp_configure_hostname(dev);
+	if (IS_ENABLED(CONFIG_WIFI_ESP_AT_VERSION_1_7)) {
+		/* This is the mode entered in above setup commands */
+		dev->mode = ESP_MODE_STA;
+
+		/*
+		 * In case of ESP 1.7 this is the first time CWMODE is entered
+		 * STA mode, so request hostname change now.
+		 */
+		esp_configure_hostname(dev);
+	}
 
 	LOG_INF("ESP Wi-Fi ready");
 
@@ -977,6 +1091,9 @@ static int esp_init(const struct device *dev)
 	k_work_init(&data->scan_work, esp_mgmt_scan_work);
 	k_work_init(&data->connect_work, esp_mgmt_connect_work);
 	k_work_init(&data->mode_switch_work, esp_mode_switch_work);
+	if (IS_ENABLED(CONFIG_WIFI_ESP_DNS_USE)) {
+		k_work_init(&data->dns_work, esp_dns_work);
+	}
 
 	esp_socket_init(data);
 
@@ -1037,7 +1154,7 @@ error:
 	return ret;
 }
 
-NET_DEVICE_OFFLOAD_INIT(wifi_esp, CONFIG_WIFI_ESP_NAME,
-			esp_init, device_pm_control_nop, &esp_driver_data, NULL,
-			CONFIG_WIFI_INIT_PRIORITY, &esp_api,
-			ESP_MTU);
+NET_DEVICE_DT_INST_OFFLOAD_DEFINE(0, esp_init, device_pm_control_nop,
+				  &esp_driver_data, NULL,
+				  CONFIG_WIFI_INIT_PRIORITY, &esp_api,
+				  ESP_MTU);

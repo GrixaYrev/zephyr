@@ -9,14 +9,18 @@ import pathlib
 import pickle
 import platform
 import subprocess
-import sys
 
 from runners.core import ZephyrBinaryRunner, RunnerCaps, BuildConfiguration
-from zephyr_ext_common import ZEPHYR_SCRIPTS
 
 # This is needed to load edt.pickle files.
-sys.path.append(str(ZEPHYR_SCRIPTS / 'dts'))
-import edtlib  # pylint: disable=unused-import
+try:
+    import edtlib  # pylint: disable=unused-import
+    MISSING_EDTLIB = False
+except ImportError:
+    # This can happen when building the documentation for the
+    # runners package if edtlib is not on sys.path. This is fine
+    # to ignore in that case.
+    MISSING_EDTLIB = True
 
 DEFAULT_BOSSAC_PORT = '/dev/ttyACM0'
 DEFAULT_BOSSAC_SPEED = '115200'
@@ -155,6 +159,7 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
             self.check_call(cmd_stty)
 
     def make_bossac_cmd(self):
+        self.ensure_output('bin')
         cmd_flash = [self.bossac, '-p', self.port, '-R', '-e', '-w', '-v',
                      '-b', self.cfg.bin_file]
 
@@ -184,6 +189,11 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
         return cmd_flash
 
     def do_run(self, command, **kwargs):
+        if MISSING_EDTLIB:
+            self.logger.warning(
+                'could not import edtlib; something may be wrong with the '
+                'python environment')
+
         if platform.system() == 'Windows':
             msg = 'CAUTION: BOSSAC runner not support on Windows!'
             raise RuntimeError(msg)

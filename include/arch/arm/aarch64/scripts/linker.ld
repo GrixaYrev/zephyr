@@ -45,19 +45,8 @@
   #define ROM_SIZE (CONFIG_FLASH_SIZE * 1K - CONFIG_FLASH_LOAD_OFFSET)
 #endif
 
-#if defined(CONFIG_XIP)
-  #if defined(CONFIG_IS_BOOTLOADER)
-    #define RAM_SIZE (CONFIG_BOOTLOADER_SRAM_SIZE * 1K)
-    #define RAM_ADDR (CONFIG_SRAM_BASE_ADDRESS + \
-                     (CONFIG_SRAM_SIZE * 1K - RAM_SIZE))
-  #else
-    #define RAM_SIZE (CONFIG_SRAM_SIZE * 1K)
-    #define RAM_ADDR CONFIG_SRAM_BASE_ADDRESS
-  #endif
-#else
-  #define RAM_SIZE (CONFIG_SRAM_SIZE * 1K - CONFIG_BOOTLOADER_SRAM_SIZE * 1K)
-  #define RAM_ADDR CONFIG_SRAM_BASE_ADDRESS
-#endif
+#define RAM_SIZE (CONFIG_SRAM_SIZE * 1K)
+#define RAM_ADDR CONFIG_SRAM_BASE_ADDRESS
 
 #if defined(CONFIG_ARM_MMU)
   _region_min_align = CONFIG_MMU_PAGE_SIZE;
@@ -173,9 +162,6 @@ SECTIONS
     {
         KEEP(*(_IRQ_VECTOR_TABLE_SECTION_SYMS))
 
-        KEEP(*(.openocd_dbg))
-        KEEP(*(".openocd_dbg.*"))
-
         *(.rodata)
         *(".rodata.*")
         *(.gnu.linkonce.r.*)
@@ -252,10 +238,6 @@ SECTIONS
         *(COMMON)
         *(".kernel_bss.*")
 
-#ifdef CONFIG_CODE_DATA_RELOCATION
-#include <linker_sram_bss_relocate.ld>
-#endif
-
         /*
          * As memory is cleared in words only, it is simpler to ensure the BSS
          * section ends on a 4 byte boundary. This wastes a maximum of 3 bytes.
@@ -277,10 +259,6 @@ SECTIONS
  */
 #include <snippets-rwdata.ld>
 
-#ifdef CONFIG_CODE_DATA_RELOCATION
-#include <linker_sram_data_relocate.ld>
-#endif
-
     } GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
     __data_rom_start = LOADADDR(_DATA_SECTION_NAME);
@@ -294,10 +272,10 @@ SECTIONS
 
     /* Define linker symbols */
 
+    MMU_ALIGN;
     _image_ram_end = .;
     _end = .; /* end of image */
     z_mapped_end = .;
-    z_mapped_size = z_mapped_end - z_mapped_start;
 
     __kernel_ram_end = RAM_ADDR + RAM_SIZE;
     __kernel_ram_size = __kernel_ram_end - __kernel_ram_start;

@@ -8,13 +8,23 @@
 #include <soc.h>
 #include <init.h>
 
+#include <stm32l4xx_ll_utils.h>
 #include <stm32l4xx_ll_bus.h>
 #include <stm32l4xx_ll_cortex.h>
 #include <stm32l4xx_ll_pwr.h>
 #include <stm32l4xx_ll_rcc.h>
+#include <stm32l4xx_ll_system.h>
+#include <clock_control/clock_stm32_ll_common.h>
 
 #include <logging/log.h>
 LOG_MODULE_DECLARE(soc, CONFIG_SOC_LOG_LEVEL);
+
+/* select MSI as wake-up system clock if configured, HSI otherwise */
+#if defined(CONFIG_CLOCK_STM32_SYSCLK_SRC_MSI)
+#define RCC_STOP_WAKEUPCLOCK_SELECTED LL_RCC_STOP_WAKEUPCLOCK_MSI
+#else
+#define RCC_STOP_WAKEUPCLOCK_SELECTED LL_RCC_STOP_WAKEUPCLOCK_HSI
+#endif
 
 /* Invoke Low Power/System Off specific Tasks */
 void pm_power_state_set(struct pm_state_info info)
@@ -32,8 +42,8 @@ void pm_power_state_set(struct pm_state_info info)
 		/* Enable the Debug Module during STOP mode */
 		LL_DBGMCU_EnableDBGStopMode();
 #endif /* CONFIG_DEBUG */
-		/* ensure HSI is the wake-up system clock */
-		LL_RCC_SetClkAfterWakeFromStop(LL_RCC_STOP_WAKEUPCLOCK_HSI);
+		/* ensure the proper wake-up system clock */
+		LL_RCC_SetClkAfterWakeFromStop(RCC_STOP_WAKEUPCLOCK_SELECTED);
 		/* enter STOP0 mode */
 		LL_PWR_SetPowerMode(LL_PWR_MODE_STOP0);
 		LL_LPM_EnableDeepSleep();
@@ -46,8 +56,8 @@ void pm_power_state_set(struct pm_state_info info)
 		/* Enable the Debug Module during STOP mode */
 		LL_DBGMCU_EnableDBGStopMode();
 #endif /* CONFIG_DEBUG */
-		/* ensure HSI is the wake-up system clock */
-		LL_RCC_SetClkAfterWakeFromStop(LL_RCC_STOP_WAKEUPCLOCK_HSI);
+		/* ensure the proper wake-up system clock */
+		LL_RCC_SetClkAfterWakeFromStop(RCC_STOP_WAKEUPCLOCK_SELECTED);
 		/* enter STOP1 mode */
 		LL_PWR_SetPowerMode(LL_PWR_MODE_STOP1);
 		LL_LPM_EnableDeepSleep();
@@ -59,8 +69,8 @@ void pm_power_state_set(struct pm_state_info info)
 		/* Enable the Debug Module during STOP mode */
 		LL_DBGMCU_EnableDBGStopMode();
 #endif /* CONFIG_DEBUG */
-		/* ensure HSI is the wake-up system clock */
-		LL_RCC_SetClkAfterWakeFromStop(LL_RCC_STOP_WAKEUPCLOCK_HSI);
+		/* ensure the proper wake-up system clock */
+		LL_RCC_SetClkAfterWakeFromStop(RCC_STOP_WAKEUPCLOCK_SELECTED);
 #ifdef PWR_CR1_RRSTP
 		LL_PWR_DisableSRAM3Retention();
 #endif /* PWR_CR1_RRSTP */
@@ -96,6 +106,8 @@ void pm_power_state_exit_post_ops(struct pm_state_info info)
 				info.substate_id);
 			break;
 		}
+		/* need to restore the clock */
+		stm32_clock_control_init(NULL);
 	}
 
 	/*

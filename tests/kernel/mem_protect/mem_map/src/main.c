@@ -6,20 +6,12 @@
 
 #include <ztest.h>
 #include <sys/mem_manage.h>
+#include <toolchain.h>
 
 /* 32-bit IA32 page tables have no mechanism to restrict execution */
 #if defined(CONFIG_X86) && !defined(CONFIG_X86_64) && !defined(CONFIG_X86_PAE)
 #define SKIP_EXECUTE_TESTS
 #endif
-
-/* Skip the memory map executing case when coverage enabled in x86_64,
- * because it will crash due to incorrect address accessing for gcov variables.
- * See issue#30434 for more details.
- */
-#if defined(CONFIG_X86_64) && defined(CONFIG_COVERAGE)
-#define SKIP_EXECUTE_TESTS
-#endif
-
 
 #define BASE_FLAGS	(K_MEM_CACHE_WB)
 volatile bool expect_fault;
@@ -60,7 +52,7 @@ void test_z_phys_map_rw(void)
 	expect_fault = false;
 
 	/* Map in a page that allows writes */
-	z_phys_map(&mapped_rw, (uintptr_t)buf,
+	z_phys_map(&mapped_rw, z_mem_phys_addr(buf),
 		   BUF_SIZE, BASE_FLAGS | K_MEM_PERM_RW);
 
 	/* Initialize buf with some bytes */
@@ -69,7 +61,7 @@ void test_z_phys_map_rw(void)
 	}
 
 	/* Map again this time only allowing reads */
-	z_phys_map(&mapped_ro, (uintptr_t)buf,
+	z_phys_map(&mapped_ro, z_mem_phys_addr(buf),
 		   BUF_SIZE, BASE_FLAGS);
 
 	/* Check that the mapped area contains the expected data. */
@@ -87,6 +79,10 @@ void test_z_phys_map_rw(void)
 }
 
 #ifndef SKIP_EXECUTE_TESTS
+extern char __test_mem_map_start[];
+extern char __test_mem_map_end[];
+
+__in_section_unique(test_mem_map) __used
 static void transplanted_function(bool *executed)
 {
 	*executed = true;
@@ -99,29 +95,30 @@ static void transplanted_function(bool *executed)
  */
 void test_z_phys_map_exec(void)
 {
-	uint8_t *mapped_rw, *mapped_exec, *mapped_ro;
+	uint8_t *mapped_exec, *mapped_ro;
 	bool executed = false;
 	void (*func)(bool *executed);
 
 	expect_fault = false;
 
-	/* Map with write permissions and copy the function into the page */
-	z_phys_map(&mapped_rw, (uintptr_t)test_page,
-		   sizeof(test_page), BASE_FLAGS | K_MEM_PERM_RW);
-
-	memcpy(mapped_rw, (void *)&transplanted_function, CONFIG_MMU_PAGE_SIZE);
+	/*
+	 * Need to reference the function or else linker would
+	 * garbage collected it.
+	 */
+	func = transplanted_function;
 
 	/* Now map with execution enabled and try to run the copied fn */
-	z_phys_map(&mapped_exec, (uintptr_t)test_page,
-		   sizeof(test_page), BASE_FLAGS | K_MEM_PERM_EXEC);
+	z_phys_map(&mapped_exec, z_mem_phys_addr(__test_mem_map_start),
+		   (uintptr_t)(__test_mem_map_end - __test_mem_map_start),
+		   BASE_FLAGS | K_MEM_PERM_EXEC);
 
 	func = (void (*)(bool *executed))mapped_exec;
 	func(&executed);
 	zassert_true(executed, "function did not execute");
 
 	/* Now map without execution and execution should now fail */
-	z_phys_map(&mapped_ro, (uintptr_t)test_page,
-		   sizeof(test_page), BASE_FLAGS);
+	z_phys_map(&mapped_ro, z_mem_phys_addr(__test_mem_map_start),
+		   (uintptr_t)(__test_mem_map_end - __test_mem_map_start), BASE_FLAGS);
 
 	func = (void (*)(bool *executed))mapped_ro;
 	expect_fault = true;
@@ -152,7 +149,7 @@ void test_z_phys_map_side_effect(void)
 	 * Show that by mapping test_page to an RO region, we can still
 	 * modify test_page.
 	 */
-	z_phys_map(&mapped, (uintptr_t)test_page,
+	z_phys_map(&mapped, z_mem_phys_addr(test_page),
 		   sizeof(test_page), BASE_FLAGS);
 
 	/* Should NOT fault */

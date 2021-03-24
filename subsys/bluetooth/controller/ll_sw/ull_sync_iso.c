@@ -5,12 +5,7 @@
  */
 
 #include <zephyr.h>
-
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_ull_sync_iso
-#include "common/log.h"
-#include "hal/debug.h"
-
+#include <bluetooth/bluetooth.h>
 #include <sys/byteorder.h>
 
 #include "util/util.h"
@@ -25,10 +20,9 @@
 #include "ticker/ticker.h"
 
 #include "pdu.h"
-#include "ll.h"
 
 #include "lll.h"
-#include "lll_vendor.h"
+#include "lll/lll_vendor.h"
 #include "lll_clock.h"
 #include "lll_scan.h"
 #include "lll_sync.h"
@@ -41,6 +35,13 @@
 #include "ull_scan_internal.h"
 #include "ull_sync_internal.h"
 #include "ull_sync_iso_internal.h"
+
+#include "ll.h"
+
+#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
+#define LOG_MODULE_NAME bt_ctlr_ull_sync_iso
+#include "common/log.h"
+#include "hal/debug.h"
 
 static int init_reset(void);
 static inline struct ll_sync_iso *sync_iso_acquire(void);
@@ -232,7 +233,7 @@ void ull_sync_iso_release(struct ll_sync_iso *sync_iso)
 
 void ull_sync_iso_setup(struct ll_sync_iso *sync_iso,
 			struct node_rx_hdr *node_rx,
-			struct pdu_biginfo *biginfo)
+			struct pdu_big_info *big_info)
 {
 	uint32_t ticks_slot_overhead;
 	struct node_rx_sync_iso *se;
@@ -249,7 +250,7 @@ void ull_sync_iso_setup(struct ll_sync_iso *sync_iso,
 	lll = &sync_iso->lll;
 	handle = ull_sync_iso_handle_get(sync_iso);
 
-	interval = sys_le16_to_cpu(biginfo->iso_interval);
+	interval = sys_le16_to_cpu(big_info->iso_interval);
 	interval_us = interval * CONN_INT_UNIT_US;
 
 	/* TODO: Populate LLL with information from the BIGINFO */

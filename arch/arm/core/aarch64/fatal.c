@@ -15,15 +15,24 @@
 
 #include <kernel.h>
 #include <logging/log.h>
+#include <exc_handle.h>
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
+
+#ifdef CONFIG_USERSPACE
+Z_EXC_DECLARE(z_arm64_user_string_nlen);
+
+static const struct z_exc_handle exceptions[] = {
+	Z_EXC_HANDLE(z_arm64_user_string_nlen),
+};
+#endif /* CONFIG_USERSPACE */
 
 #ifdef CONFIG_EXCEPTION_DEBUG
 static void dump_esr(uint64_t esr, bool *dump_far)
 {
 	const char *err;
 
-	switch (ESR_EC(esr)) {
+	switch (GET_ESR_EC(esr)) {
 	case 0b000000: /* 0x00 */
 		err = "Unknown reason";
 		break;
@@ -142,9 +151,9 @@ static void dump_esr(uint64_t esr, bool *dump_far)
 	}
 
 	LOG_ERR("ESR_ELn: 0x%016llx", esr);
-	LOG_ERR("  EC:  0x%llx (%s)", ESR_EC(esr), err);
-	LOG_ERR("  IL:  0x%llx", ESR_IL(esr));
-	LOG_ERR("  ISS: 0x%llx", ESR_ISS(esr));
+	LOG_ERR("  EC:  0x%llx (%s)", GET_ESR_EC(esr), err);
+	LOG_ERR("  IL:  0x%llx", GET_ESR_IL(esr));
+	LOG_ERR("  ISS: 0x%llx", GET_ESR_ISS(esr));
 }
 
 static void esf_dump(const z_arch_esf_t *esf)
@@ -168,7 +177,18 @@ static bool is_recoverable(z_arch_esf_t *esf, uint64_t esr, uint64_t far,
 	if (!esf)
 		return false;
 
-	/* Empty */
+#ifdef CONFIG_USERSPACE
+	for (int i = 0; i < ARRAY_SIZE(exceptions); i++) {
+		/* Mask out instruction mode */
+		uint64_t start = (uint64_t)exceptions[i].start;
+		uint64_t end = (uint64_t)exceptions[i].end;
+
+		if (esf->elr >= start && esf->elr < end) {
+			esf->elr = (uint64_t)(exceptions[i].fixup);
+			return true;
+		}
+	}
+#endif
 
 	return false;
 }
@@ -181,18 +201,18 @@ void z_arm64_fatal_error(unsigned int reason, z_arch_esf_t *esf)
 	uint64_t el;
 
 	if (reason != K_ERR_SPURIOUS_IRQ) {
-		__asm__ volatile("mrs %0, CurrentEL" : "=r" (el));
+		el = read_currentel();
 
 		switch (GET_EL(el)) {
 		case MODE_EL1:
-			__asm__ volatile("mrs %0, esr_el1" : "=r" (esr));
-			__asm__ volatile("mrs %0, far_el1" : "=r" (far));
-			__asm__ volatile("mrs %0, elr_el1" : "=r" (elr));
+			esr = read_esr_el1();
+			far = read_far_el1();
+			elr = read_elr_el1();
 			break;
 		case MODE_EL3:
-			__asm__ volatile("mrs %0, esr_el3" : "=r" (esr));
-			__asm__ volatile("mrs %0, far_el3" : "=r" (far));
-			__asm__ volatile("mrs %0, elr_el3" : "=r" (elr));
+			esr = read_esr_el3();
+			far = read_far_el3();
+			elr = read_elr_el3();
 			break;
 		}
 
@@ -235,5 +255,26 @@ void z_arm64_do_kernel_oops(z_arch_esf_t *esf)
 	/* x8 holds the exception reason */
 	unsigned int reason = esf->x8;
 
+#if defined(CONFIG_USERSPACE)
+	/*
+	 * User mode is only allowed to induce oopses and stack check
+	 * failures via software-triggered system fatal exceptions.
+	 */
+	if (((_current->base.user_options & K_USER) != 0) &&
+		reason != K_ERR_STACK_CHK_FAIL) {
+		reason = K_ERR_KERNEL_OOPS;
+	}
+#endif
+
 	z_arm64_fatal_error(reason, esf);
 }
+
+#ifdef CONFIG_USERSPACE
+FUNC_NORETURN void arch_syscall_oops(void *ssf_ptr)
+{
+	ARG_UNUSED(ssf_ptr);
+
+	z_arm64_fatal_error(K_ERR_KERNEL_OOPS, NULL);
+	CODE_UNREACHABLE;
+}
+#endif

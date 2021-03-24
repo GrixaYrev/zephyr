@@ -73,7 +73,7 @@ struct dtls_timing_context {
 };
 
 /** TLS context information. */
-struct tls_context {
+__net_socket struct tls_context {
 	/** Information whether TLS context is used. */
 	bool is_used;
 
@@ -564,6 +564,7 @@ static int dtls_rx(void *ctx, unsigned char *buf, size_t len,
 	ssize_t received;
 	bool retry;
 	struct zsock_pollfd fds;
+	int flags = tls_ctx->flags & ~ZSOCK_MSG_TRUNC;
 
 	do {
 		retry = false;
@@ -580,9 +581,8 @@ static int dtls_rx(void *ctx, unsigned char *buf, size_t len,
 			}
 		}
 
-		received = zsock_recvfrom(
-				tls_ctx->sock, buf, len, tls_ctx->flags,
-				&addr, &addrlen);
+		received = zsock_recvfrom(tls_ctx->sock, buf, len, flags,
+					  &addr, &addrlen);
 		if (received < 0) {
 			if (errno == EAGAIN) {
 				return MBEDTLS_ERR_SSL_WANT_READ;
@@ -648,10 +648,10 @@ static int tls_tx(void *ctx, const unsigned char *buf, size_t len)
 static int tls_rx(void *ctx, unsigned char *buf, size_t len)
 {
 	struct tls_context *tls_ctx = ctx;
+	int flags = tls_ctx->flags & ~ZSOCK_MSG_WAITALL;
 	ssize_t received;
 
-	received = zsock_recvfrom(tls_ctx->sock, buf, len,
-				  tls_ctx->flags, NULL, 0);
+	received = zsock_recvfrom(tls_ctx->sock, buf, len, flags, NULL, 0);
 	if (received < 0) {
 		if (errno == EAGAIN) {
 			return MBEDTLS_ERR_SSL_WANT_READ;
@@ -1024,6 +1024,20 @@ static int tls_opt_sec_tag_list_set(struct tls_context *context,
 
 	memcpy(context->options.sec_tag_list.sec_tags, optval, optlen);
 	context->options.sec_tag_list.sec_tag_count = sec_tag_cnt;
+
+	return 0;
+}
+
+static int sock_opt_protocol_get(struct tls_context *context,
+				 void *optval, socklen_t *optlen)
+{
+	int protocol = (int)context->tls_version;
+
+	if (*optlen != sizeof(protocol)) {
+		return -EINVAL;
+	}
+
+	*(int *)optval = protocol;
 
 	return 0;
 }
@@ -1600,37 +1614,104 @@ ssize_t ztls_sendmsg_ctx(struct tls_context *ctx, const struct msghdr *msg,
 static ssize_t recv_tls(struct tls_context *ctx, void *buf,
 			size_t max_len, int flags)
 {
+	size_t recv_len = 0;
+	const bool waitall = flags & ZSOCK_MSG_WAITALL;
+	int ret;
+
+	do {
+		size_t read_len = max_len - recv_len;
+
+		ret = mbedtls_ssl_read(&ctx->ssl, (uint8_t *)buf + recv_len,
+				       read_len);
+		if (ret < 0) {
+			if (ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
+				/* Peer notified that it's closing the
+				 * connection.
+				 */
+				break;
+			}
+
+			if (ret == MBEDTLS_ERR_SSL_CLIENT_RECONNECT) {
+				/* Client reconnect on the same socket is not
+				 * supported. See mbedtls_ssl_read API
+				 * documentation.
+				 */
+				break;
+			}
+
+			if (ret == MBEDTLS_ERR_SSL_WANT_READ ||
+			    ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
+				if (recv_len > 0) {
+					break;
+				}
+
+				ret = -EAGAIN;
+			} else {
+				ret = -EIO;
+			}
+
+			errno = -ret;
+			return -1;
+		}
+
+		if (ret == 0) {
+			break;
+		}
+
+		recv_len += ret;
+	} while (waitall && (recv_len < max_len));
+
+	return recv_len;
+}
+
+#if defined(CONFIG_NET_SOCKETS_ENABLE_DTLS)
+static ssize_t recvfrom_dtls_common(struct tls_context *ctx, void *buf,
+				    size_t max_len, int flags,
+				    struct sockaddr *src_addr,
+				    socklen_t *addrlen)
+{
 	int ret;
 
 	ret = mbedtls_ssl_read(&ctx->ssl, buf, max_len);
 	if (ret >= 0) {
-		return ret;
-	}
+		size_t remaining;
 
-	if (ret == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
-		/* Peer notified that it's closing the connection. */
-		return 0;
-	}
+		if (src_addr && addrlen) {
+			dtls_peer_address_get(ctx, src_addr, addrlen);
+		}
 
-	if (ret == MBEDTLS_ERR_SSL_CLIENT_RECONNECT) {
-		/* Client reconnect on the same socket is not
-		 * supported. See mbedtls_ssl_read API documentation.
+		/* mbedtls_ssl_get_bytes_avail() indicate the data length
+		 * remaining in the current datagram.
 		 */
-		return 0;
+		remaining = mbedtls_ssl_get_bytes_avail(&ctx->ssl);
+
+		/* No more data in the datagram, or dummy read. */
+		if ((remaining == 0) || (max_len == 0)) {
+			return ret;
+		}
+
+		if (flags & ZSOCK_MSG_TRUNC) {
+			ret += remaining;
+		}
+
+		for (int i = 0; i < remaining; i++) {
+			uint8_t byte;
+			int err;
+
+			err = mbedtls_ssl_read(&ctx->ssl, &byte, sizeof(byte));
+			if (err <= 0) {
+				NET_ERR("Error while flushing the rest of the"
+					" datagram, err %d", err);
+				ret = MBEDTLS_ERR_SSL_INTERNAL_ERROR;
+				break;
+			}
+		}
 	}
 
-	if (ret == MBEDTLS_ERR_SSL_WANT_READ ||
-	    ret == MBEDTLS_ERR_SSL_WANT_WRITE) {
-		ret = -EAGAIN;
-	} else {
-		ret = -EIO;
-	}
 
-	errno = -ret;
-	return -1;
+	return ret;
 }
 
-#if defined(CONFIG_NET_SOCKETS_ENABLE_DTLS)
 static ssize_t recvfrom_dtls_client(struct tls_context *ctx, void *buf,
 				    size_t max_len, int flags,
 				    struct sockaddr *src_addr,
@@ -1643,11 +1724,8 @@ static ssize_t recvfrom_dtls_client(struct tls_context *ctx, void *buf,
 		goto error;
 	}
 
-	ret = mbedtls_ssl_read(&ctx->ssl, buf, max_len);
+	ret = recvfrom_dtls_common(ctx, buf, max_len, flags, src_addr, addrlen);
 	if (ret >= 0) {
-		if (src_addr && addrlen) {
-			dtls_peer_address_get(ctx, src_addr, addrlen);
-		}
 		return ret;
 	}
 
@@ -1718,11 +1796,9 @@ static ssize_t recvfrom_dtls_server(struct tls_context *ctx, void *buf,
 			}
 		}
 
-		ret = mbedtls_ssl_read(&ctx->ssl, buf, max_len);
+		ret = recvfrom_dtls_common(ctx, buf, max_len, flags,
+					   src_addr, addrlen);
 		if (ret >= 0) {
-			if (src_addr && addrlen) {
-				dtls_peer_address_get(ctx, src_addr, addrlen);
-			}
 			return ret;
 		}
 
@@ -2034,7 +2110,17 @@ int ztls_getsockopt_ctx(struct tls_context *ctx, int level, int optname,
 		return -1;
 	}
 
-	if (level != SOL_TLS) {
+	if ((level == SOL_SOCKET) && (optname == SO_PROTOCOL)) {
+		/* Protocol type is overridden during socket creation. Its
+		 * value is restored here to return current value.
+		 */
+		err = sock_opt_protocol_get(ctx, optval, optlen);
+		if (err < 0) {
+			errno = -err;
+			return -1;
+		}
+		return err;
+	} else if (level != SOL_TLS) {
 		return zsock_getsockopt(ctx->sock, level, optname,
 					optval, optlen);
 	}

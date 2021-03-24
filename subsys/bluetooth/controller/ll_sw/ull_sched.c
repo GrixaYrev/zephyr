@@ -20,7 +20,7 @@
 #include "pdu.h"
 
 #include "lll.h"
-#include "lll_vendor.h"
+#include "lll/lll_vendor.h"
 #include "lll_scan.h"
 #include "lll_conn.h"
 
@@ -64,6 +64,7 @@ void ull_sched_after_mstr_slot_get(uint8_t user_id, uint32_t ticks_slot_abs,
 		uint32_t volatile ret_cb;
 		struct ll_conn *conn;
 		uint32_t ret;
+		bool success;
 
 		ret_cb = TICKER_STATUS_BUSY;
 		ret = ticker_next_slot_get(TICKER_INSTANCE_ID_CTLR, user_id,
@@ -77,7 +78,8 @@ void ull_sched_after_mstr_slot_get(uint8_t user_id, uint32_t ticks_slot_abs,
 			}
 		}
 
-		LL_ASSERT(ret_cb == TICKER_STATUS_SUCCESS);
+		success = (ret_cb == TICKER_STATUS_SUCCESS);
+		LL_ASSERT(success);
 
 		if (ticker_id == 0xff) {
 			break;
@@ -116,9 +118,7 @@ void ull_sched_after_mstr_slot_get(uint8_t user_id, uint32_t ticks_slot_abs,
 			}
 #endif
 
-			ticks_slot_abs_curr +=
-				conn->evt.ticks_slot +
-				HAL_TICKER_US_TO_TICKS(EVENT_JITTER_US << 3);
+			ticks_slot_abs_curr += conn->evt.ticks_slot;
 
 			if ((ticker_id_prev != 0xff) &&
 			    (ticker_ticks_diff_get(ticks_to_expire_normal,
@@ -351,6 +351,7 @@ static void win_offset_calc(struct ll_conn *conn_curr, uint8_t is_select,
 		uint32_t volatile ret_cb;
 		struct ll_conn *conn;
 		uint32_t ret;
+		bool success;
 
 		ret_cb = TICKER_STATUS_BUSY;
 		ret = ticker_next_slot_get(TICKER_INSTANCE_ID_CTLR,
@@ -365,7 +366,8 @@ static void win_offset_calc(struct ll_conn *conn_curr, uint8_t is_select,
 			}
 		}
 
-		LL_ASSERT(ret_cb == TICKER_STATUS_SUCCESS);
+		success = (ret_cb == TICKER_STATUS_SUCCESS);
+		LL_ASSERT(success);
 
 		if (ticker_id == 0xff) {
 			break;

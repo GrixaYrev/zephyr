@@ -211,6 +211,8 @@ Here are some ways to set it:
 #. create a ``boards/<BOARD>_<revision>.overlay`` file in the application
    folder for the current board revision. This requires that the board supports
    multiple revisions, see :ref:`porting_board_revisions`.
+   The ``boards/<BOARD>_<revision>.overlay`` file will be merged with
+   ``boards/<BOARD>.overlay`` if this file also exists.
 #. create a ``boards/<BOARD>.overlay`` file in the application
    folder, for the current board
 #. create a ``<BOARD>.overlay`` file in the application folder
@@ -350,7 +352,7 @@ compatibles) supported by the driver.
 
 .. note::
 
-  Historically, Zephyr has used Kconfig options like :option:`CONFIG_SPI_0` and
+  Historically, Zephyr has used Kconfig options like :option:`CONFIG_I2C_0` and
   :option:`CONFIG_I2C_1` to enable driver support for individual devices of
   some type. For example, if ``CONFIG_I2C_1=y``, the SoC's I2C peripheral
   driver would create a ``struct device`` for "I2C bus controller number 1".

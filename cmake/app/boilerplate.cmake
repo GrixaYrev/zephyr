@@ -199,9 +199,6 @@ add_custom_target(
 # Dummy add to generate files.
 zephyr_linker_sources(SECTIONS)
 
-zephyr_file(APPLICATION_ROOT BOARD_ROOT)
-list(APPEND BOARD_ROOT ${ZEPHYR_BASE})
-
 # 'BOARD_ROOT' is a prioritized list of directories where boards may
 # be found. It always includes ${ZEPHYR_BASE} at the lowest priority.
 zephyr_file(APPLICATION_ROOT BOARD_ROOT)
@@ -244,7 +241,18 @@ if(${BOARD}_DEPRECATED)
   message(WARNING "Deprecated BOARD=${BOARD_DEPRECATED} name specified, board automatically changed to: ${BOARD}.")
 endif()
 
+zephyr_boilerplate_watch(BOARD)
+
 foreach(root ${BOARD_ROOT})
+  # Check that the board root looks reasonable.
+  if(NOT IS_DIRECTORY "${root}/boards")
+    message(WARNING "BOARD_ROOT element without a 'boards' subdirectory:
+${root}
+Hints:
+  - if your board directory is '/foo/bar/boards/<ARCH>/my_board' then add '/foo/bar' to BOARD_ROOT, not the entire board directory
+  - if in doubt, use absolute paths")
+  endif()
+
   # NB: find_path will return immediately if the output variable is
   # already set
   if (BOARD_ALIAS)
@@ -286,7 +294,7 @@ if(DEFINED BOARD_REVISION)
 endif()
 
 # Check that SHIELD has not changed.
-zephyr_check_cache(SHIELD)
+zephyr_check_cache(SHIELD WATCH)
 
 if(SHIELD)
   set(BOARD_MESSAGE "${BOARD_MESSAGE}, Shield(s): ${SHIELD}")
@@ -306,61 +314,65 @@ set(SHIELD-NOTFOUND ${SHIELD_AS_LIST})
 # When found, use that path to infer the ARCH we are building for.
 foreach(root ${BOARD_ROOT})
   set(shield_dir ${root}/boards/shields)
-  # Match the .overlay files in the shield directories to make sure we are
-  # finding shields, e.g. x_nucleo_iks01a1/x_nucleo_iks01a1.overlay
-  file(GLOB_RECURSE shields_refs_list
-    RELATIVE ${shield_dir}
-    ${shield_dir}/*/*.overlay
-    )
+  # Match the Kconfig.shield files in the shield directories to make sure we are
+  # finding shields, e.g. x_nucleo_iks01a1/Kconfig.shield
+  file(GLOB_RECURSE shields_refs_list ${shield_dir}/*/Kconfig.shield)
 
   # The above gives a list like
-  # x_nucleo_iks01a1/x_nucleo_iks01a1.overlay;x_nucleo_iks01a2/x_nucleo_iks01a2.overlay
-  # we construct a list of shield names by extracting file name and
-  # removing the extension.
+  # x_nucleo_iks01a1/Kconfig.shield;x_nucleo_iks01a2/Kconfig.shield
+  # we construct a list of shield names by extracting the folder and find
+  # and overlay files in there. Each overlay corresponds to a shield.
+  # We obtain the shield name by removing the overlay extension.
   unset(SHIELD_LIST)
-  foreach(shield_path ${shields_refs_list})
-    get_filename_component(shield ${shield_path} NAME_WE)
-    list(APPEND SHIELD_LIST ${shield})
+  foreach(shields_refs ${shields_refs_list})
+    get_filename_component(shield_path ${shields_refs} DIRECTORY)
+    file(GLOB shield_overlays RELATIVE ${shield_path} ${shield_path}/*.overlay)
+    foreach(overlay ${shield_overlays})
+      get_filename_component(shield ${overlay} NAME_WE)
+      list(APPEND SHIELD_LIST ${shield})
+      set(SHIELD_DIR_${shield} ${shield_path})
+    endforeach()
   endforeach()
 
   if(DEFINED SHIELD)
     foreach(s ${SHIELD_AS_LIST})
-      list(FIND SHIELD_LIST ${s} _idx)
-      if (_idx EQUAL -1)
+      if(NOT ${s} IN_LIST SHIELD_LIST)
         continue()
       endif()
 
       list(REMOVE_ITEM SHIELD-NOTFOUND ${s})
 
-      list(GET shields_refs_list ${_idx} s_path)
-      get_filename_component(s_dir ${s_path} DIRECTORY)
-
       # if shield config flag is on, add shield overlay to the shield overlays
       # list and dts_fixup file to the shield fixup file
       list(APPEND
         shield_dts_files
-        ${shield_dir}/${s_path}
+        ${SHIELD_DIR_${s}}/${s}.overlay
         )
 
       list(APPEND
         shield_dts_fixups
-        ${shield_dir}/${s_dir}/dts_fixup.h
+        ${SHIELD_DIR_${s}}/dts_fixup.h
+        )
+
+      list(APPEND
+        SHIELD_DIRS
+        ${SHIELD_DIR_${s}}
         )
 
       # search for shield/shield.conf file
-      if(EXISTS ${shield_dir}/${s_dir}/${s}.conf)
+      if(EXISTS ${SHIELD_DIR_${s}}/${s}.conf)
         # add shield.conf to the shield config list
         list(APPEND
           shield_conf_files
-          ${shield_dir}/${s_dir}/${s}.conf
+          ${SHIELD_DIR_${s}}/${s}.conf
           )
       endif()
 
-      zephyr_file(CONF_FILES ${shield_dir}/${s_dir}/boards
+      zephyr_file(CONF_FILES ${SHIELD_DIR_${s}}/boards
                   DTS   shield_dts_files
                   KCONF shield_conf_files
       )
-      zephyr_file(CONF_FILES ${shield_dir}/${s_dir}/boards/${s}
+      zephyr_file(CONF_FILES ${SHIELD_DIR_${s}}/boards/${s}
                   DTS   shield_dts_files
                   KCONF shield_conf_files
       )
@@ -480,17 +492,19 @@ The CACHED_CONF_FILE is internal Zephyr variable used between CMake runs. \
 To change CONF_FILE, use the CONF_FILE variable.")
 unset(CONF_FILE CACHE)
 
+zephyr_file(CONF_FILES ${APPLICATION_SOURCE_DIR}/boards DTS APP_BOARD_DTS)
+
+# The CONF_FILE variable is now set to its final value.
+zephyr_boilerplate_watch(CONF_FILE)
+
 if(DTC_OVERLAY_FILE)
   # DTC_OVERLAY_FILE has either been specified on the cmake CLI or is already
   # in the CMakeCache.txt. This has precedence over the environment
   # variable DTC_OVERLAY_FILE
 elseif(DEFINED ENV{DTC_OVERLAY_FILE})
   set(DTC_OVERLAY_FILE $ENV{DTC_OVERLAY_FILE})
-elseif(EXISTS          ${APPLICATION_SOURCE_DIR}/boards/${BOARD}.overlay)
-  set(DTC_OVERLAY_FILE ${APPLICATION_SOURCE_DIR}/boards/${BOARD}.overlay)
-elseif((DEFINED BOARD_REVISION) AND
-       EXISTS          ${APPLICATION_SOURCE_DIR}/${BOARD}_${BOARD_REVISION_STRING}.overlay)
-  set(DTC_OVERLAY_FILE ${APPLICATION_SOURCE_DIR}/${BOARD}_${BOARD_REVISION_STRING}.overlay)
+elseif(APP_BOARD_DTS)
+  set(DTC_OVERLAY_FILE ${APP_BOARD_DTS})
 elseif(EXISTS          ${APPLICATION_SOURCE_DIR}/${BOARD}.overlay)
   set(DTC_OVERLAY_FILE ${APPLICATION_SOURCE_DIR}/${BOARD}.overlay)
 elseif(EXISTS          ${APPLICATION_SOURCE_DIR}/app.overlay)
@@ -514,10 +528,14 @@ message(STATUS "Cache files will be written to: ${USER_CACHE_DIR}")
 set(CMAKE_C_COMPILER_FORCED   1)
 set(CMAKE_CXX_COMPILER_FORCED 1)
 
+include(${ZEPHYR_BASE}/cmake/verify-toolchain.cmake)
 include(${ZEPHYR_BASE}/cmake/host-tools.cmake)
 
 # Include board specific device-tree flags before parsing.
 include(${BOARD_DIR}/pre_dt_board.cmake OPTIONAL)
+
+# The DTC_OVERLAY_FILE variable is now set to its final value.
+zephyr_boilerplate_watch(DTC_OVERLAY_FILE)
 
 # DTS should be close to kconfig because CONFIG_ variables from
 # kconfig and dts should be available at the same time.
@@ -550,6 +568,15 @@ endif()
 # Use SOC to search for a 'CMakeLists.txt' file.
 # e.g. zephyr/soc/xtense/intel_apl_adsp/CMakeLists.txt.
 foreach(root ${SOC_ROOT})
+  # Check that the root looks reasonable.
+  if(NOT IS_DIRECTORY "${root}/soc")
+    message(WARNING "SOC_ROOT element without a 'soc' subdirectory:
+${root}
+Hints:
+  - if your SoC family directory is '/foo/bar/soc/<ARCH>/my_soc_family', then add '/foo/bar' to SOC_ROOT, not the entire SoC family path
+  - if in doubt, use absolute paths")
+  endif()
+
   if(EXISTS ${root}/soc/${ARCH}/${SOC_PATH})
     set(SOC_DIR ${root}/soc)
     break()
@@ -584,6 +611,7 @@ set(KERNEL_NAME ${CONFIG_KERNEL_BIN_NAME})
 set(KERNEL_ELF_NAME   ${KERNEL_NAME}.elf)
 set(KERNEL_BIN_NAME   ${KERNEL_NAME}.bin)
 set(KERNEL_HEX_NAME   ${KERNEL_NAME}.hex)
+set(KERNEL_UF2_NAME   ${KERNEL_NAME}.uf2)
 set(KERNEL_MAP_NAME   ${KERNEL_NAME}.map)
 set(KERNEL_LST_NAME   ${KERNEL_NAME}.lst)
 set(KERNEL_S19_NAME   ${KERNEL_NAME}.s19)

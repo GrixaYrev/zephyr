@@ -12,7 +12,7 @@
 #include "intc_gicv3_priv.h"
 
 /* Redistributor base addresses for each core */
-mem_addr_t gic_rdists[GIC_NUM_CPU_IF];
+mem_addr_t gic_rdists[CONFIG_MP_NUM_CPUS];
 
 #ifdef CONFIG_ARMV8_A_NS
 #define IGROUPR_VAL	0xFFFFFFFFU
@@ -29,7 +29,7 @@ static int gic_wait_rwp(uint32_t intid)
 	mem_addr_t base;
 
 	if (intid < GIC_SPI_INT_BASE) {
-		base = (GIC_GET_RDIST(GET_CPUID) + GICR_CTLR);
+		base = (GIC_GET_RDIST(GET_CPUID()) + GICR_CTLR);
 		rwp_mask = BIT(GICR_CTLR_RWP);
 	} else {
 		base = GICD_CTLR;
@@ -175,7 +175,7 @@ static void gicv3_cpuif_init(void)
 	uint32_t icc_sre;
 	uint32_t intid;
 
-	mem_addr_t base = gic_rdists[GET_CPUID] + GICR_SGI_BASE_OFF;
+	mem_addr_t base = gic_rdists[GET_CPUID()] + GICR_SGI_BASE_OFF;
 
 	/* Disable all sgi ppi */
 	sys_write32(BIT_MASK(GIC_NUM_INTR_PER_REG), ICENABLER(base, 0));
@@ -211,13 +211,13 @@ static void gicv3_cpuif_init(void)
 	 */
 	icc_sre = read_sysreg(ICC_SRE_EL1);
 
-	if (!(icc_sre & ICC_SRE_ELx_SRE)) {
-		icc_sre = (icc_sre | ICC_SRE_ELx_SRE |
-			   ICC_SRE_ELx_DIB | ICC_SRE_ELx_DFB);
+	if (!(icc_sre & ICC_SRE_ELx_SRE_BIT)) {
+		icc_sre = (icc_sre | ICC_SRE_ELx_SRE_BIT |
+			   ICC_SRE_ELx_DIB_BIT | ICC_SRE_ELx_DFB_BIT);
 		write_sysreg(icc_sre, ICC_SRE_EL1);
 		icc_sre = read_sysreg(ICC_SRE_EL1);
 
-		__ASSERT_NO_MSG(icc_sre & ICC_SRE_ELx_SRE);
+		__ASSERT_NO_MSG(icc_sre & ICC_SRE_ELx_SRE_BIT);
 	}
 
 	write_sysreg(GIC_IDLE_PRIO, ICC_PMR_EL1);
@@ -287,21 +287,31 @@ static void gicv3_dist_init(void)
 #endif
 }
 
-/* TODO: add arm_gic_secondary_init() for multicore support */
 int arm_gic_init(const struct device *unused)
 {
+	int i;
+
 	ARG_UNUSED(unused);
 
 	gicv3_dist_init();
 
 	/* Fixme: populate each redistributor */
-	gic_rdists[0] = GIC_RDIST_BASE;
+	for (i = 0; i < GIC_NUM_CPU_IF; i++)
+		gic_rdists[i] = GIC_RDIST_BASE + i * 0x20000;
 
-	gicv3_rdist_enable(GIC_GET_RDIST(GET_CPUID));
+	gicv3_rdist_enable(GIC_GET_RDIST(GET_CPUID()));
 
 	gicv3_cpuif_init();
 
 	return 0;
 }
-
 SYS_INIT(arm_gic_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+
+#ifdef CONFIG_SMP
+void arm_gic_secondary_init(void)
+{
+	gicv3_rdist_enable(GIC_GET_RDIST(GET_CPUID()));
+
+	gicv3_cpuif_init();
+}
+#endif

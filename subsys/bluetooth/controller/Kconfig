@@ -372,6 +372,10 @@ config BT_CTLR_CONN_RSSI
 	help
 	  Enable connection RSSI measurement.
 
+config BT_CTLR_CHECK_SAME_PEER_CONN
+	bool
+	default BT_MAX_CONN > 1 && !BT_CTLR_ALLOW_SAME_PEER_CONN
+
 endif # BT_CONN
 
 config BT_CTLR_FILTER
@@ -554,6 +558,30 @@ config BT_CTLR_PERIPHERAL_ISO
 	bool "LE Connected Isochronous Stream Peripheral [EXPERIMENTAL]" if BT_LL_SW_SPLIT
 	select BT_CTLR_SET_HOST_FEATURE
 
+config BT_CTLR_CONN_ISO_STREAMS
+	int "LE Connected Isochronous Streams"
+	depends on BT_CTLR_CENTRAL_ISO || BT_CTLR_PERIPHERAL_ISO
+	range 1 64
+	default 2
+	help
+	  Maximum supported total number of CISes.
+
+config BT_CTLR_CONN_ISO_GROUPS
+	int "LE Connected Isochronous Groups"
+	depends on BT_CTLR_CENTRAL_ISO || BT_CTLR_PERIPHERAL_ISO
+	range 1 240
+	default 1
+	help
+	  Maximum supported CIGs.
+
+config BT_CTLR_CONN_ISO_STREAMS_PER_GROUP
+	int "LE Connected Isochronous Streams per Group"
+	depends on BT_CTLR_CENTRAL_ISO || BT_CTLR_PERIPHERAL_ISO
+	range 1 31
+	default 2
+	help
+	  Maximum supported CISes per CIG.
+
 config BT_CTLR_DTM
 	bool
 	help
@@ -606,7 +634,7 @@ endif # BT_CTLR
 
 config BT_CTLR_DEBUG_PINS_CPUAPP
 	bool "Bluetooth Controller Debug Pins"
-	depends on BOARD_NRF5340PDK_NRF5340_CPUAPP || BOARD_NRF5340DK_NRF5340_CPUAPP
+	depends on BOARD_NRF5340DK_NRF5340_CPUAPP
 	help
 	  Route debug GPIO toggling for the BLE Controller. Enable this when
 	  using Bluetooth Controller Debug Pins in co-processor and the main

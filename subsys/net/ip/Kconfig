@@ -336,17 +336,6 @@ config NET_TCP_BACKLOG_SIZE
 	  The number of simultaneous TCP connection attempts, i.e. outstanding
 	  TCP connections waiting for initial ACK.
 
-config NET_TCP_AUTO_ACCEPT
-	bool "Auto accept incoming TCP data"
-	depends on NET_TCP
-	help
-	  Automatically accept incoming TCP data packet to the valid
-	  connection even if the application has not yet called accept().
-	  This speeds up incoming data processing and is done like in Linux.
-	  Drawback is that we allocate data for the incoming packets even if
-	  the application has not yet accepted the connection. If the peer
-	  sends lot of packets, we might run out of memory in this case.
-
 config NET_TCP_TIME_WAIT_DELAY
 	int "How long to wait in TIME_WAIT state (in milliseconds)"
 	depends on NET_TCP
@@ -432,26 +421,27 @@ config NET_TCP_RECV_QUEUE_TIMEOUT
 	  SEQ 2. But if we receive SEQs 5,4,3,7 then the SEQ 7 is discarded
 	  because the list would not be sequential as number 6 is be missing.
 
-choice
-	prompt "Select TCP stack"
+config NET_TCP_WORKQ_STACK_SIZE
+	int "TCP work queue thread stack size"
+	default 1024
 	depends on NET_TCP
-	default NET_TCP2
 	help
-	  Select the TCP stack implementation to use.
+	  Set the TCP work queue thread stack size in bytes.
+
+config NET_TCP_ISN_RFC6528
+	bool "Use ISN algorithm from RFC 6528"
+	default y
+	depends on NET_TCP
+	select MBEDTLS
+	help
+	  Implement Initial Sequence Number calculation as described in
+	  RFC 6528 chapter 3. https://tools.ietf.org/html/rfc6528
+	  If this is not set, then sys_rand32_get() is used for ISN value.
 
 config NET_TCP2
-	bool "New TCP stack"
-	help
-	  Enable new TCP stack for Zephyr 2.4
-
-config NET_TCP1
-	bool "Legacy TCP stack (DEPRECATED)"
-	help
-	  The legacy TCP stack that has been in use since Zephyr 1.0.
-	  The legacy TCP stack is deprecated and you should use the new TCP
-	  stack instead. The legacy TCP stack will be removed in 2.6 release.
-
-endchoice
+	bool
+	default y
+	depends on NET_TCP
 
 config NET_TEST_PROTOCOL
 	bool "Enable JSON based test protocol (UDP)"
@@ -559,6 +549,14 @@ config NET_CONTEXT_RCVTIMEO
 	  time is configurable run-time in the application code. For network
 	  sockets timeout is configured per socket with
 	  setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, ...) function.
+
+config NET_CONTEXT_SNDTIMEO
+	bool "Add SNDTIMEO support to net_context"
+	help
+	  It is possible to time out sending a network packet. The timeout
+	  time is configurable run-time in the application code. For network
+	  sockets timeout is configured per socket with
+	  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, ...) function.
 
 config NET_TEST
 	bool "Network Testing"

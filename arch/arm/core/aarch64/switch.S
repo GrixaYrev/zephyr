@@ -20,8 +20,6 @@
 
 _ASM_FILE_PROLOGUE
 
-GDATA(_kernel)
-
 /*
  * Routine to handle context switches
  *
@@ -31,25 +29,33 @@ GDATA(_kernel)
 
 GTEXT(z_arm64_context_switch)
 SECTION_FUNC(TEXT, z_arm64_context_switch)
+
+	ldr	x3, =_thread_offset_to_callee_saved
+
 	/* addr of callee-saved regs in thread in x2 */
-	ldr	x2, =_thread_offset_to_callee_saved
-	add	x2, x2, x1
+	add	x2, x1, x3
 
 	/* Save the current SP */
-	mov	x1, sp
+	mov	x4, sp
 
 	stp	x19, x20, [x2, ___callee_saved_t_x19_x20_OFFSET]
 	stp	x21, x22, [x2, ___callee_saved_t_x21_x22_OFFSET]
 	stp	x23, x24, [x2, ___callee_saved_t_x23_x24_OFFSET]
 	stp	x25, x26, [x2, ___callee_saved_t_x25_x26_OFFSET]
 	stp	x27, x28, [x2, ___callee_saved_t_x27_x28_OFFSET]
-	stp	x29, x1, [x2, ___callee_saved_t_x29_sp_OFFSET]
+	stp	x29, x4, [x2, ___callee_saved_t_x29_sp_OFFSET]
+
+#ifdef CONFIG_SMP
+	/* save old thread into switch handle which is required by
+	 * wait_for_switch
+	 */
+	 str	x1, [x1, #___thread_t_switch_handle_OFFSET]
+#endif
 
 #ifdef CONFIG_THREAD_LOCAL_STORAGE
 	/* Grab the TLS pointer */
 	ldr	x2, =_thread_offset_to_tls
-	add	x2, x2, x0
-	ldr	x2, [x2]
+	ldr	x2, [x0, x2]
 
 	/* Store in the "Thread ID" register.
 	 * This register is used as a base pointer to all
@@ -59,8 +65,7 @@ SECTION_FUNC(TEXT, z_arm64_context_switch)
 #endif
 
 	/* addr of callee-saved regs in thread in x2 */
-	ldr	x2, =_thread_offset_to_callee_saved
-	add	x2, x2, x0
+	add	x2, x0, x3
 
 	ldp	x19, x20, [x2, ___callee_saved_t_x19_x20_OFFSET]
 	ldp	x21, x22, [x2, ___callee_saved_t_x21_x22_OFFSET]
@@ -70,6 +75,12 @@ SECTION_FUNC(TEXT, z_arm64_context_switch)
 	ldp	x29, x1, [x2, ___callee_saved_t_x29_sp_OFFSET]
 
 	mov	sp, x1
+
+#ifdef CONFIG_USERSPACE
+	stp     xzr, x30, [sp, #-16]!
+	bl      z_arm64_swap_ptables
+	ldp     xzr, x30, [sp], #16
+#endif
 
 #ifdef CONFIG_INSTRUMENT_THREAD_SWITCHING
 	stp	xzr, x30, [sp, #-16]!
@@ -90,7 +101,6 @@ SECTION_FUNC(TEXT, z_arm64_context_switch)
 
 GTEXT(z_arm64_sync_exc)
 SECTION_FUNC(TEXT, z_arm64_sync_exc)
-	z_arm64_enter_exc x2, x3
 
 	mrs	x0, esr_el1
 	lsr	x1, x0, #26
@@ -107,6 +117,11 @@ SECTION_FUNC(TEXT, z_arm64_sync_exc)
 	cmp	x1, #_SVC_CALL_RUNTIME_EXCEPT
 	beq	oops
 
+#ifdef CONFIG_USERSPACE
+	cmp	x1, #_SVC_CALL_SYSTEM_CALL
+	beq	z_arm64_do_syscall
+#endif
+
 #ifdef CONFIG_IRQ_OFFLOAD
 	cmp	x1, #_SVC_CALL_IRQ_OFFLOAD
 	beq	offload
@@ -119,7 +134,7 @@ offload:
 
 	/* --(_kernel->nested) */
 	dec_nest_counter x0, x1
-	b	exit
+	b	z_arm64_exit_exc
 #endif
 	b	inv
 
@@ -141,9 +156,7 @@ context_switch:
 
 	/* Switch thread */
 	bl	z_arm64_context_switch
-
-exit:
-	z_arm64_exit_exc x0, x1
+	b	z_arm64_exit_exc
 
 inv:
 	mov	x0, #0 /* K_ERR_CPU_EXCEPTION */
@@ -151,7 +164,7 @@ inv:
 	bl	z_arm64_fatal_error
 
 	/* Return here only in case of recoverable error */
-	z_arm64_exit_exc x0, x1
+	b	z_arm64_exit_exc
 
 GTEXT(z_arm64_call_svc)
 SECTION_FUNC(TEXT, z_arm64_call_svc)

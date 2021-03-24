@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018-2019 Nordic Semiconductor ASA
+ * Copyright (c) 2018-2021 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,12 +7,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include <zephyr/types.h>
+#include <toolchain.h>
+#include <soc.h>
+#include <bluetooth/hci.h>
 #include <sys/byteorder.h>
 
-#include <toolchain.h>
-#include <bluetooth/hci.h>
-
+#include "hal/cpu.h"
 #include "hal/ccm.h"
 #include "hal/radio.h"
 #include "hal/ticker.h"
@@ -28,7 +28,9 @@
 
 #include "lll.h"
 #include "lll_vendor.h"
+#include "lll_adv_types.h"
 #include "lll_adv.h"
+#include "lll_adv_pdu.h"
 #include "lll_conn.h"
 #include "lll_chan.h"
 #include "lll_filter.h"
@@ -40,7 +42,6 @@
 
 #define LOG_MODULE_NAME bt_ctlr_llsw_openisa_lll_adv
 #include "common/log.h"
-#include <soc.h>
 #include "hal/debug.h"
 
 static int init_reset(void);
@@ -150,6 +151,7 @@ int lll_adv_data_init(struct lll_adv_pdu *pdu)
 		return -ENOMEM;
 	}
 
+	p->len = 0U;
 	pdu->pdu[0] = (void *)p;
 
 	return 0;
@@ -212,14 +214,11 @@ struct pdu_adv *lll_adv_pdu_alloc(struct lll_adv_pdu *pdu, uint8_t *idx)
 		uint8_t first_latest;
 
 		pdu->last = first;
-		/* FIXME: Ensure that data is synchronized so that an ISR
+		/* NOTE: Ensure that data is synchronized so that an ISR
 		 *        vectored, after pdu->last has been updated, does
-		 *        access the latest value. __DSB() is used in ARM
-		 *        Cortex M4 architectures. Use appropriate
-		 *        instructions on other platforms.
-		 *
-		 *        cpu_dsb();
+		 *        access the latest value.
 		 */
+		cpu_dmb();
 		first_latest = pdu->first;
 		if (first_latest != first) {
 			last++;
@@ -277,8 +276,6 @@ struct pdu_adv *lll_adv_pdu_latest_get(struct lll_adv_pdu *pdu,
 		void *p;
 
 		if (!MFIFO_ENQUEUE_IDX_GET(pdu_free, &free_idx)) {
-			LL_ASSERT(false);
-
 			return NULL;
 		}
 
@@ -329,10 +326,11 @@ static int prepare_cb(struct lll_prepare_param *prepare_param)
 
 	DEBUG_RADIO_START_A(1);
 
+#if defined(CONFIG_BT_PERIPHERAL)
 	/* Check if stopped (on connection establishment race between LLL and
 	 * ULL.
 	 */
-	if (lll_is_stop(lll)) {
+	if (lll->conn && lll->conn->initiated) {
 		int err;
 
 		err = lll_clk_off();
@@ -343,6 +341,7 @@ static int prepare_cb(struct lll_prepare_param *prepare_param)
 		DEBUG_RADIO_START_A(0);
 		return 0;
 	}
+#endif /* CONFIG_BT_PERIPHERAL */
 
 	radio_reset();
 	/* TODO: other Tx Power settings */
@@ -793,7 +792,9 @@ static void chan_prepare(struct lll_adv *lll)
 	uint8_t upd = 0U;
 
 	pdu = lll_adv_data_latest_get(lll, &upd);
+	LL_ASSERT(pdu);
 	scan_pdu = lll_adv_scan_rsp_latest_get(lll, &upd);
+	LL_ASSERT(scan_pdu);
 
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 	if (upd) {
@@ -900,7 +901,6 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 		   lll->conn) {
 		struct node_rx_ftr *ftr;
 		struct node_rx_pdu *rx;
-		int ret;
 
 		if (IS_ENABLED(CONFIG_BT_CTLR_CHAN_SEL_2)) {
 			rx = ull_pdu_rx_alloc_peek(4);
@@ -928,8 +928,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 		}
 #endif /* CONFIG_BT_CTLR_CONN_RSSI */
 		/* Stop further LLL radio events */
-		ret = lll_stop(lll);
-		LL_ASSERT(!ret);
+		lll->conn->initiated = 1;
 
 		rx = ull_pdu_rx_alloc();
 

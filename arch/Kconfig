@@ -90,6 +90,7 @@ config XTENSA
 	select HAS_DTS
 	select USE_SWITCH
 	select USE_SWITCH_SUPPORTED
+	select ATOMIC_OPERATIONS_ARCH
 	help
 	  Xtensa architecture
 
@@ -608,7 +609,7 @@ config KERNEL_VM_OFFSET
 	  in page tables, the equation:
 
 	      virt = phys + ((KERNEL_VM_BASE + KERNEL_VM_OFFSET) -
-	                     SRAM_BASE_ADDRESS)
+	                     (SRAM_BASE_ADDRESS + SRAM_OFFSET))
 
 	  Will be used to convert between physical and virtual addresses for
 	  memory that is mapped at boot.
@@ -764,11 +765,21 @@ config FPU
 
 config FPU_SHARING
 	bool "FPU register sharing"
-	depends on FPU
+	depends on FPU && MULTITHREADING
+	default y if ARM && ARMV7_M_ARMV8_M_FP
 	help
 	  This option enables preservation of the hardware floating point registers
 	  across context switches to allow multiple threads to perform concurrent
 	  floating point operations.
+
+	  Note that on Cortex-M processors with the floating point extension we
+	  enable by default the FPU register sharing mode, as some GCC compilers
+	  may activate a floating point context by generating FP instructions for
+	  any thread, and that context must be preserved when switching such
+	  threads in and out. The developers can still disable the FP sharing
+	  mode in their application projects, and switch to Unshared FP registers
+	  mode, if it is guaranteed that the image code does not generate FP
+	  instructions outside the single thread context that is allowed to do so.
 
 endmenu
 
