@@ -40,7 +40,10 @@ struct _callee_saved {
 typedef struct _callee_saved _callee_saved_t;
 
 struct _thread_arch {
-	/* empty */
+#ifdef CONFIG_USERSPACE
+	struct arm_mmu_ptables *ptables;
+	uint64_t priv_stack_start;
+#endif
 };
 
 typedef struct _thread_arch _thread_arch_t;

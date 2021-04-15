@@ -24,6 +24,7 @@
 
 #include "lll.h"
 #include "lll_vendor.h"
+#include "lll_clock.h"
 #include "lll_scan.h"
 #include "lll_conn.h"
 #include "lll_chan.h"
@@ -127,10 +128,11 @@ static int prepare_cb(struct lll_prepare_param *prepare_param)
 
 	DEBUG_RADIO_START_O(1);
 
+#if defined(CONFIG_BT_CENTRAL)
 	/* Check if stopped (on connection establishment race between LLL and
 	 * ULL.
 	 */
-	if (lll_is_stop(lll)) {
+	if (lll->conn && lll->conn->initiated) {
 		int err;
 
 		err = lll_clk_off();
@@ -141,6 +143,7 @@ static int prepare_cb(struct lll_prepare_param *prepare_param)
 		DEBUG_RADIO_START_O(0);
 		return 0;
 	}
+#endif /* CONFIG_BT_CENTRAL */
 
 	radio_reset();
 	/* TODO: other Tx Power settings */
@@ -671,7 +674,7 @@ static inline uint32_t isr_rx_pdu(struct lll_scan *lll, uint8_t devmatch_ok,
 	if (0) {
 #if defined(CONFIG_BT_CENTRAL)
 	/* Initiator */
-	} else if ((lll->conn) &&
+	} else if (lll->conn &&
 		   isr_scan_init_check(lll, pdu_adv_rx, rl_idx)) {
 		struct lll_conn *lll_conn;
 		struct node_rx_ftr *ftr;
@@ -685,7 +688,6 @@ static inline uint32_t isr_rx_pdu(struct lll_scan *lll, uint8_t devmatch_ok,
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 		bt_addr_t *lrpa;
 #endif /* CONFIG_BT_CTLR_PRIVACY */
-		int ret;
 
 		if (IS_ENABLED(CONFIG_BT_CTLR_CHAN_SEL_2)) {
 			rx = ull_pdu_rx_alloc_peek(4);
@@ -825,8 +827,7 @@ static inline uint32_t isr_rx_pdu(struct lll_scan *lll, uint8_t devmatch_ok,
 		 */
 
 		/* Stop further LLL radio events */
-		ret = lll_stop(lll);
-		LL_ASSERT(!ret);
+		lll->conn->initiated = 1;
 
 		rx = ull_pdu_rx_alloc();
 
@@ -1015,6 +1016,10 @@ static inline bool isr_scan_init_adva_check(struct lll_scan *lll,
 	/* Only applies to initiator with no whitelist */
 	if (rl_idx != FILTER_IDX_NONE) {
 		return (rl_idx == lll->rl_idx);
+	} else if (!ull_filter_lll_rl_addr_allowed(pdu->tx_addr,
+						   pdu->adv_ind.addr,
+						   &rl_idx)) {
+		return false;
 	}
 #endif /* CONFIG_BT_CTLR_PRIVACY */
 	return ((lll->adv_addr_type == pdu->tx_addr) &&

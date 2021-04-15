@@ -28,6 +28,8 @@
 #include "common/log.h"
 
 #include "hci_core.h"
+#include "id.h"
+#include "adv.h"
 #include "conn_internal.h"
 #include "l2cap_internal.h"
 #include "keys.h"
@@ -35,7 +37,7 @@
 #include "ssp.h"
 #include "att_internal.h"
 #include "gatt_internal.h"
-#include "audio/iso_internal.h"
+#include "iso_internal.h"
 
 /* Peripheral timeout to initialize Connection Parameter Update procedure */
 #define CONN_UPDATE_TIMEOUT  K_MSEC(CONFIG_BT_CONN_PARAM_UPDATE_TIMEOUT)
@@ -1502,7 +1504,7 @@ struct bt_conn *conn_lookup_iso(struct bt_conn *conn)
 			return iso_conn;
 		}
 
-		if (conn->iso.acl == conn) {
+		if (bt_conn_iso(iso_conn)->acl == conn) {
 			return iso_conn;
 		}
 
@@ -2039,7 +2041,9 @@ static int conn_disconnect(struct bt_conn *conn, uint8_t reason)
 		return err;
 	}
 
-	bt_conn_set_state(conn, BT_CONN_DISCONNECT);
+	if (conn->state == BT_CONN_CONNECTED) {
+		bt_conn_set_state(conn, BT_CONN_DISCONNECT);
+	}
 
 	return 0;
 }
@@ -2258,7 +2262,7 @@ int bt_conn_le_create_auto(const struct bt_conn_le_create_param *create_param,
 		return -EINVAL;
 	}
 
-	if (!bt_le_scan_random_addr_check()) {
+	if (!bt_id_scan_random_addr_check()) {
 		return -EINVAL;
 	}
 
@@ -2343,14 +2347,14 @@ int bt_conn_le_create(const bt_addr_le_t *peer,
 	}
 
 	if (atomic_test_bit(bt_dev.flags, BT_DEV_EXPLICIT_SCAN)) {
-		return -EINVAL;
+		return -EAGAIN;
 	}
 
 	if (atomic_test_bit(bt_dev.flags, BT_DEV_INITIATING)) {
 		return -EALREADY;
 	}
 
-	if (!bt_le_scan_random_addr_check()) {
+	if (!bt_id_scan_random_addr_check()) {
 		return -EINVAL;
 	}
 
@@ -2422,7 +2426,7 @@ int bt_le_set_auto_conn(const bt_addr_le_t *addr,
 		return -EINVAL;
 	}
 
-	if (!bt_le_scan_random_addr_check()) {
+	if (!bt_id_scan_random_addr_check()) {
 		return -EINVAL;
 	}
 

@@ -61,7 +61,7 @@
 	SECTION_PROLOGUE(struct_type##_area,,SUBALIGN(subalign)) \
 	{ \
 		Z_LINK_ITERABLE(struct_type); \
-	} GROUP_LINK_IN(ROMABLE_REGION)
+	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
 /* Define an output section which will set up an iterable area
  * of equally-sized data structures. For use with Z_STRUCT_SECTION_ITERABLE.
@@ -124,8 +124,6 @@
  * their shell commands are automatically initialized by the kernel.
  */
 
-#define APP_SMEM_SECTION() KEEP(*(SORT("data_smem_*")))
-
 #elif defined(_ASMLANGUAGE)
 
 /* Assembly FILES: declaration defined by the linker script */
@@ -186,7 +184,6 @@ extern char __data_ram_end[];
 /* Virtual addresses of page-aligned kernel image mapped into RAM at boot */
 extern char z_mapped_start[];
 extern char z_mapped_end[];
-extern char z_mapped_size[];
 #endif /* CONFIG_MMU */
 
 /* Includes text and rodata */
@@ -310,9 +307,11 @@ extern char z_kobject_data_begin[];
 extern char __tdata_start[];
 extern char __tdata_end[];
 extern char __tdata_size[];
+extern char __tdata_align[];
 extern char __tbss_start[];
 extern char __tbss_end[];
 extern char __tbss_size[];
+extern char __tbss_align[];
 extern char __tls_start[];
 extern char __tls_end[];
 extern char __tls_size[];

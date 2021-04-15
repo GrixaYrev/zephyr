@@ -235,9 +235,8 @@ static void host_kbc_ibf_isr(void *arg)
 	 * The high byte contains information from the host, and the lower byte
 	 * indicates if the host sent a command or data. 1 = Command.
 	 */
-	evt.evt_data = (inst_kbc->HIKMDI << NPCX_8042_DATA_POS) |
-		       (IS_BIT_SET(inst_kbc->HIKMST, NPCX_HIKMST_A2) <<
-				       NPCX_8042_TYPE_POS);
+	evt.evt_data = NPCX_8042_EVT_DATA(NPCX_8042_EVT_IBF, inst_kbc->HIKMDI,
+			IS_BIT_SET(inst_kbc->HIKMST, NPCX_HIKMST_A2));
 
 	LOG_DBG("%s: kbc data 0x%02x", __func__, evt.evt_data);
 	espi_send_callbacks(host_sub_data.callbacks, host_sub_data.host_bus_dev,
@@ -248,6 +247,9 @@ static void host_kbc_obe_isr(void *arg)
 {
 	ARG_UNUSED(arg);
 	struct kbc_reg *const inst_kbc = host_sub_cfg.inst_kbc;
+	struct espi_event evt = { ESPI_BUS_PERIPHERAL_NOTIFICATION,
+		ESPI_PERIPHERAL_8042_KBC, ESPI_PERIPHERAL_NODATA
+	};
 
 	/* Disable KBC OBE interrupt first */
 	inst_kbc->HICTRL &= ~BIT(NPCX_HICTRL_OBECIE);
@@ -255,11 +257,13 @@ static void host_kbc_obe_isr(void *arg)
 	LOG_DBG("%s: kbc status 0x%02x", __func__, inst_kbc->HIKMST);
 
 	/*
-	 * TODO: Notify application that host already read out data. We might
-	 * use E8042_SET_FLAG in espi_api_lpc_write_request() instead of setting
-	 * status of HIKMST here directly.
+	 * Notify application that host already read out data. The application
+	 * might need to clear status register via espi_api_lpc_write_request()
+	 * with E8042_CLEAR_FLAG opcode in callback.
 	 */
-	inst_kbc->HIKMST &= ~BIT(NPCX_HIKMST_ST1);
+	evt.evt_data = NPCX_8042_EVT_DATA(NPCX_8042_EVT_OBE, 0, 0);
+	espi_send_callbacks(host_sub_data.callbacks, host_sub_data.host_bus_dev,
+							evt);
 }
 
 static void host_kbc_init(void)
@@ -776,7 +780,7 @@ int npcx_host_periph_read_request(enum lpc_peripheral_opcode op,
 }
 
 int npcx_host_periph_write_request(enum lpc_peripheral_opcode op,
-								uint32_t *data)
+							const uint32_t *data)
 {
 	volatile uint32_t __attribute__((unused)) dummy;
 	struct kbc_reg *const inst_kbc = host_sub_cfg.inst_kbc;
@@ -823,13 +827,11 @@ int npcx_host_periph_write_request(enum lpc_peripheral_opcode op,
 			break;
 		case E8042_SET_FLAG:
 			/* FW shouldn't modify these flags directly */
-			*data &= ~NPCX_KBC_STS_MASK;
-			inst_kbc->HIKMST |= *data;
+			inst_kbc->HIKMST |= *data & ~NPCX_KBC_STS_MASK;
 			break;
 		case E8042_CLEAR_FLAG:
 			/* FW shouldn't modify these flags directly */
-			*data &= ~NPCX_KBC_STS_MASK;
-			inst_kbc->HIKMST &= ~(*data);
+			inst_kbc->HIKMST &= ~(*data | NPCX_KBC_STS_MASK);
 			break;
 		default:
 			return -EINVAL;
@@ -960,6 +962,16 @@ void npcx_host_init_subs_host_domain(void)
 	LOG_DBG("Hos sub-modules configurations are done!");
 }
 
+void npcx_host_enable_access_interrupt(void)
+{
+	npcx_miwu_irq_enable(&host_sub_cfg.host_acc_wui);
+}
+
+void npcx_host_disable_access_interrupt(void)
+{
+	npcx_miwu_irq_disable(&host_sub_cfg.host_acc_wui);
+}
+
 int npcx_host_init_subs_core_domain(const struct device *host_bus_dev,
 							sys_slist_t *callbacks)
 {
@@ -968,6 +980,7 @@ int npcx_host_init_subs_core_domain(const struct device *host_bus_dev,
 	const struct device *const clk_dev =
 					device_get_binding(NPCX_CLK_CTRL_NAME);
 	int i;
+	uint8_t shm_sts;
 
 	host_sub_data.callbacks = callbacks;
 	host_sub_data.host_bus_dev = host_bus_dev;
@@ -994,7 +1007,8 @@ int npcx_host_init_subs_core_domain(const struct device *host_bus_dev,
 	 */
 	inst_shm->SMC_CTL &= BIT(NPCX_SMC_CTL_HOSTWAIT);
 	/* Clear shared memory status */
-	inst_shm->SMC_STS = inst_shm->SMC_STS;
+	shm_sts = inst_shm->SMC_STS;
+	inst_shm->SMC_STS = shm_sts;
 
 	/* host sub-module initialization in core domain */
 #if defined(CONFIG_ESPI_PERIPHERAL_8042_KBC)
@@ -1049,6 +1063,16 @@ int npcx_host_init_subs_core_domain(const struct device *host_bus_dev,
 		    NULL, 0);
 	irq_enable(DT_INST_IRQ_BY_NAME(0, p80_fifo, irq));
 #endif
+
+	if (IS_ENABLED(CONFIG_PM)) {
+		/*
+		 * Configure the host access wake-up event triggered from a host
+		 * transaction on eSPI/LPC bus. Do not enable it here. Or plenty
+		 * of interrupts will jam the system in S0.
+		 */
+		npcx_miwu_interrupt_configure(&host_sub_cfg.host_acc_wui,
+				NPCX_MIWU_MODE_EDGE, NPCX_MIWU_TRIG_HIGH);
+	}
 
 	return 0;
 }

@@ -366,6 +366,16 @@ static void gsm_finalize_connection(struct gsm_modem *gsm)
 		}
 	}
 
+	if (IS_ENABLED(CONFIG_MODEM_GSM_FACTORY_RESET_AT_BOOT)) {
+		(void)modem_cmd_send_nolock(&gsm->context.iface,
+					    &gsm->context.cmd_handler,
+					    &response_cmds[0],
+					    ARRAY_SIZE(response_cmds),
+					    "AT&F", &gsm->sem_response,
+					    GSM_CMD_AT_TIMEOUT);
+		k_sleep(K_SECONDS(1));
+	}
+
 	(void)gsm_setup_mccmno(gsm);
 
 	ret = modem_cmd_handler_setup_cmds_nolock(&gsm->context.iface,
@@ -679,9 +689,9 @@ static void gsm_configure(struct k_work *work)
 	gsm_finalize_connection(gsm);
 }
 
-void gsm_ppp_start(const struct device *device)
+void gsm_ppp_start(const struct device *dev)
 {
-	struct gsm_modem *gsm = device->data;
+	struct gsm_modem *gsm = dev->data;
 
 	/* Re-init underlying UART comms */
 	int r = modem_iface_uart_init_dev(&gsm->context.iface,
@@ -695,9 +705,9 @@ void gsm_ppp_start(const struct device *device)
 	(void)k_delayed_work_submit(&gsm->gsm_configure_work, K_NO_WAIT);
 }
 
-void gsm_ppp_stop(const struct device *device)
+void gsm_ppp_stop(const struct device *dev)
 {
-	struct gsm_modem *gsm = device->data;
+	struct gsm_modem *gsm = dev->data;
 	struct net_if *iface = gsm->iface;
 
 	net_if_l2(iface)->enable(iface, false);
@@ -717,9 +727,9 @@ void gsm_ppp_stop(const struct device *device)
 	}
 }
 
-static int gsm_init(const struct device *device)
+static int gsm_init(const struct device *dev)
 {
-	struct gsm_modem *gsm = device->data;
+	struct gsm_modem *gsm = dev->data;
 	int r;
 
 	LOG_DBG("Generic GSM modem (%p)", gsm);
@@ -784,7 +794,9 @@ static int gsm_init(const struct device *device)
 		return -ENODEV;
 	}
 
-	gsm_ppp_start(device);
+	if (IS_ENABLED(CONFIG_GSM_PPP_AUTOSTART)) {
+		gsm_ppp_start(dev);
+	}
 
 	return 0;
 }

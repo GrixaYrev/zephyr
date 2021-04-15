@@ -51,7 +51,7 @@
 
 #define PDU_HDR(sar, type) (sar << 6 | (type & BIT_MASK(6)))
 
-#define CLIENT_BUF_SIZE 68
+#define CLIENT_BUF_SIZE 65
 
 #if defined(CONFIG_BT_MESH_DEBUG_USE_ID_ADDR)
 #define ADV_OPT                                                                \
@@ -272,7 +272,7 @@ static void send_filter_status(struct bt_mesh_proxy_client *client,
 
 static void proxy_cfg(struct bt_mesh_proxy_client *client)
 {
-	NET_BUF_SIMPLE_DEFINE(buf, 29);
+	NET_BUF_SIMPLE_DEFINE(buf, BT_MESH_NET_MAX_PDU_LEN);
 	struct bt_mesh_net_rx rx;
 	uint8_t opcode;
 	int err;
@@ -379,6 +379,12 @@ static void node_id_start(struct bt_mesh_subnet *sub)
 {
 	sub->node_id = BT_MESH_NODE_IDENTITY_RUNNING;
 	sub->node_id_start = k_uptime_get_32();
+
+	Z_STRUCT_SECTION_FOREACH(bt_mesh_proxy_cb, cb) {
+		if (cb->identity_enabled) {
+			cb->identity_enabled(sub->net_idx);
+		}
+	}
 }
 
 void bt_mesh_proxy_identity_start(struct bt_mesh_subnet *sub)
@@ -393,6 +399,12 @@ void bt_mesh_proxy_identity_stop(struct bt_mesh_subnet *sub)
 {
 	sub->node_id = BT_MESH_NODE_IDENTITY_STOPPED;
 	sub->node_id_start = 0U;
+
+	Z_STRUCT_SECTION_FOREACH(bt_mesh_proxy_cb, cb) {
+		if (cb->identity_disabled) {
+			cb->identity_disabled(sub->net_idx);
+		}
+	}
 }
 
 int bt_mesh_proxy_identity_enable(void)
@@ -664,7 +676,7 @@ int bt_mesh_proxy_prov_enable(void)
 		return -EBUSY;
 	}
 
-	bt_gatt_service_register(&prov_svc);
+	(void)bt_gatt_service_register(&prov_svc);
 	gatt_svc = MESH_GATT_PROV;
 	prov_fast_adv = true;
 
@@ -784,7 +796,7 @@ int bt_mesh_proxy_gatt_enable(void)
 		return -EBUSY;
 	}
 
-	bt_gatt_service_register(&proxy_svc);
+	(void)bt_gatt_service_register(&proxy_svc);
 	gatt_svc = MESH_GATT_PROXY;
 
 	for (i = 0; i < ARRAY_SIZE(clients); i++) {

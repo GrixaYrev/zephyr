@@ -14,9 +14,8 @@
 #include <openamp/open_amp.h>
 #include <metal/device.h>
 
-#define LOG_LEVEL LOG_LEVEL_INFO
 #define LOG_MODULE_NAME rpmsg_backend
-LOG_MODULE_REGISTER(LOG_MODULE_NAME);
+LOG_MODULE_REGISTER(LOG_MODULE_NAME, CONFIG_RPMSG_SERVICE_LOG_LEVEL);
 
 /* Configuration defines */
 #if !DT_HAS_CHOSEN(zephyr_ipc_shm)
@@ -128,7 +127,6 @@ static void virtio_notify(struct virtqueue *vq)
 #elif defined(CONFIG_RPMSG_SERVICE_SINGLE_IPM_SUPPORT)
 
 #if defined(CONFIG_SOC_MPS2_AN521) || \
-	defined(CONFIG_SOC_V2M_MUSCA_A) || \
 	defined(CONFIG_SOC_V2M_MUSCA_B1)
 	uint32_t current_core = sse_200_platform_get_cpu_id();
 

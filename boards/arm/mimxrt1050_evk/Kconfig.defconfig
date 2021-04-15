@@ -12,16 +12,8 @@ choice CODE_LOCATION
 	default CODE_FLEXSPI
 endchoice
 
-config DISK_ACCESS_USDHC1
-	default y
-	depends on DISK_ACCESS_USDHC
-
 config I2C
 	default y if KSCAN
-
-config SPI_3
-	default y
-	depends on SPI_MCUX_LPSPI
 
 config KSCAN
 	default y if LVGL

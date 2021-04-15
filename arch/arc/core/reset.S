@@ -83,6 +83,10 @@ SECTION_FUNC(TEXT,__start)
 	sr r0, [_ARC_V2_IRQ_VECT_BASE]
 #endif
 
+	lr r0, [_ARC_V2_STATUS32]
+	bset r0, r0, _ARC_V2_STATUS32_DZ_BIT
+	kflag r0
+
 #if defined(CONFIG_USERSPACE)
 	lr r0, [_ARC_V2_STATUS32]
 	bset r0, r0, _ARC_V2_STATUS32_US_BIT
@@ -95,13 +99,10 @@ SECTION_FUNC(TEXT,__start)
 	kflag r0
 #endif
 
-	mov_s r1, 1
-
-invalidate_and_disable_icache:
-
+/* Invalidate icache */
 	lr r0, [_ARC_V2_I_CACHE_BUILD]
 	and.f r0, r0, 0xff
-	bz.nd invalidate_dcache
+	bz.nd done_icache_invalidate
 
 	mov_s r2, 0
 	sr r2, [_ARC_V2_IC_IVIC]
@@ -109,17 +110,17 @@ invalidate_and_disable_icache:
 	nop_s
 	nop_s
 	nop_s
-	sr r1, [_ARC_V2_IC_CTRL]
+done_icache_invalidate:
 
-invalidate_dcache:
-
+/* Invalidate dcache */
 	lr r3, [_ARC_V2_D_CACHE_BUILD]
 	and.f r3, r3, 0xff
-	bz.nd done_cache_invalidate
+	bz.nd done_dcache_invalidate
 
+	mov_s r1, 1
 	sr r1, [_ARC_V2_DC_IVDC]
 
-done_cache_invalidate:
+done_dcache_invalidate:
 
 /*
  * Init ARC internal architecture state
@@ -129,8 +130,8 @@ done_cache_invalidate:
  * substitution of normal hardware reset sequence.
  */
 #ifdef CONFIG_INIT_ARCH_HW_AT_BOOT
-	/* Set MPU (v3) registers to default */
-#if CONFIG_ARC_MPU_VER == 3
+	/* Set MPU (v4) registers to default */
+#if CONFIG_ARC_MPU_VER == 4
 	/* Set default reset value to _ARC_V2_MPU_EN register */
 #define ARC_MPU_EN_RESET_VALUE 0x400181C0
 	mov_s r1, ARC_MPU_EN_RESET_VALUE

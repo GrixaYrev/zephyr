@@ -16,6 +16,10 @@
 #include <logging/log.h>
 #include <sys/util.h>
 
+#if defined CONFIG_SHELL_GETOPT
+#include <shell/shell_getopt.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -67,6 +71,7 @@ extern "C" {
  * @{
  */
 
+struct getopt_state;
 struct shell_static_entry;
 
 /**
@@ -603,12 +608,13 @@ struct shell_flags {
 	uint32_t insert_mode :1; /*!< Controls insert mode for text introduction.*/
 	uint32_t use_colors  :1; /*!< Controls colored syntax.*/
 	uint32_t echo        :1; /*!< Controls shell echo.*/
+	uint32_t obscure     :1; /*!< If echo on, print asterisk instead */
 	uint32_t processing  :1; /*!< Shell is executing process function.*/
 	uint32_t tx_rdy      :1;
 	uint32_t mode_delete :1; /*!< Operation mode of backspace key */
 	uint32_t history_exit:1; /*!< Request to exit history mode */
-	uint32_t cmd_ctx     :1; /*!< Shell is executing command */
 	uint32_t last_nl     :8; /*!< Last received new line character */
+	uint32_t cmd_ctx     :1; /*!< Shell is executing command */
 	uint32_t print_noinit:1; /*!< Print request from not initialized shell*/
 };
 
@@ -648,6 +654,11 @@ struct shell_ctx {
 
 	/*!< VT100 color and cursor position, terminal width.*/
 	struct shell_vt100_ctx vt100_ctx;
+
+#if defined CONFIG_SHELL_GETOPT
+	/*!< getopt context for a shell backend. */
+	struct getopt_state getopt_state;
+#endif
 
 	uint16_t cmd_buff_len; /*!< Command length.*/
 	uint16_t cmd_buff_pos; /*!< Command buffer cursor position.*/
@@ -958,6 +969,40 @@ void shell_help(const struct shell *shell);
 /* @brief Command's help has been printed */
 #define SHELL_CMD_HELP_PRINTED	(1)
 
+#if defined CONFIG_SHELL_GETOPT
+/**
+ * @brief Parses the command-line arguments.
+ *
+ * It is based on FreeBSD implementation.
+ *
+ * @param[in] shell	Pointer to the shell instance.
+ * @param[in] argc	Arguments count.
+ * @param[in] argv	Arguments.
+ * @param[in] ostr	String containing the legitimate option characters.
+ *
+ * @return		If an option was successfully found, function returns
+ *			the option character.
+ * @return		If options have been detected that is not in @p ostr
+ *			function will return '?'.
+ *			If function encounters an option with a missing
+ *			argument, then the return value depends on the first
+ *			character in optstring: if it is ':', then ':' is
+ *			returned; otherwise '?' is returned.
+ * @return -1		If all options have been parsed.
+ */
+int shell_getopt(const struct shell *shell, int argc, char *const argv[],
+		 const char *ostr);
+
+/**
+ * @brief Returns shell_getopt state.
+ *
+ * @param[in] shell	Pointer to the shell instance.
+ *
+ * @return		Pointer to struct getopt_state.
+ */
+struct getopt_state *shell_getopt_state_get(const struct shell *shell);
+#endif /* CONFIG_SHELL_GETOPT */
+
 /** @brief Execute command.
  *
  * Pass command line to shell to execute.
@@ -973,7 +1018,7 @@ void shell_help(const struct shell *shell);
  *			@option{CONFIG_SHELL_BACKEND_DUMMY} option is enabled.
  * @param[in] cmd	Command to be executed.
  *
- * @returns		Result of the execution
+ * @return		Result of the execution
  */
 int shell_execute_cmd(const struct shell *shell, const char *cmd);
 
@@ -989,6 +1034,69 @@ int shell_execute_cmd(const struct shell *shell, const char *cmd);
  * @retval -EINVAL if invalid root command is provided.
  */
 int shell_set_root_cmd(const char *cmd);
+
+/**
+ * @brief Allow application to control text insert mode.
+ * Value is modified atomically and the previous value is returned.
+ *
+ * @param[in] shell	Pointer to the shell instance.
+ * @param[in] val	Insert mode.
+ *
+ * @retval 0 or 1: previous value
+ * @retval -EINVAL if shell is NULL.
+ */
+int shell_insert_mode_set(const struct shell *shell, bool val);
+
+/**
+ * @brief Allow application to control whether terminal output uses colored
+ * syntax.
+ * Value is modified atomically and the previous value is returned.
+ *
+ * @param[in] shell	Pointer to the shell instance.
+ * @param[in] val	Color mode.
+ *
+ * @retval 0 or 1: previous value
+ * @retval -EINVAL if shell is NULL.
+ */
+int shell_use_colors_set(const struct shell *shell, bool val);
+
+/**
+ * @brief Allow application to control whether user input is echoed back.
+ * Value is modified atomically and the previous value is returned.
+ *
+ * @param[in] shell	Pointer to the shell instance.
+ * @param[in] val	Echo mode.
+ *
+ * @retval 0 or 1: previous value
+ * @retval -EINVAL if shell is NULL.
+ */
+int shell_echo_set(const struct shell *shell, bool val);
+
+/**
+ * @brief Allow application to control whether user input is obscured with
+ * asterisks -- useful for implementing passwords.
+ * Value is modified atomically and the previous value is returned.
+ *
+ * @param[in] shell	Pointer to the shell instance.
+ * @param[in] obscure	Obscure mode.
+ *
+ * @retval 0 or 1: previous value.
+ * @retval -EINVAL if shell is NULL.
+ */
+int shell_obscure_set(const struct shell *shell, bool obscure);
+
+/**
+ * @brief Allow application to control whether the delete key backspaces or
+ * deletes.
+ * Value is modified atomically and the previous value is returned.
+ *
+ * @param[in] shell	Pointer to the shell instance.
+ * @param[in] val	Delete mode.
+ *
+ * @retval 0 or 1: previous value
+ * @retval -EINVAL if shell is NULL.
+ */
+int shell_mode_delete_set(const struct shell *shell, bool val);
 
 /**
  * @}

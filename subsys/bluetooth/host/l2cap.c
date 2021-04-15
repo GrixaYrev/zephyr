@@ -326,7 +326,7 @@ static bool l2cap_chan_add(struct bt_conn *conn, struct bt_l2cap_chan *chan,
 #endif
 
 	if (!ch) {
-		BT_ERR("Unable to allocate L2CAP CID");
+		BT_ERR("Unable to allocate L2CAP channel ID");
 		return false;
 	}
 
@@ -1107,6 +1107,13 @@ static void le_ecred_conn_req(struct bt_l2cap *l2cap, uint8_t ident,
 	}
 
 	req = net_buf_pull_mem(buf, sizeof(*req));
+
+	if (buf->len > sizeof(dcid)) {
+		BT_ERR("Too large LE conn req packet size");
+		result = BT_L2CAP_LE_ERR_INVALID_PARAMS;
+		goto response;
+	}
+
 	psm = sys_le16_to_cpu(req->psm);
 	mtu = sys_le16_to_cpu(req->mtu);
 	mps = sys_le16_to_cpu(req->mps);
@@ -1133,6 +1140,8 @@ static void le_ecred_conn_req(struct bt_l2cap *l2cap, uint8_t ident,
 		goto response;
 	}
 
+	memset(dcid, 0, sizeof(dcid));
+
 	while (buf->len >= sizeof(scid)) {
 		scid = net_buf_pull_le16(buf);
 
@@ -1144,28 +1153,20 @@ static void le_ecred_conn_req(struct bt_l2cap *l2cap, uint8_t ident,
 			dcid[i++] = sys_cpu_to_le16(ch->rx.cid);
 			continue;
 		/* Some connections refused – invalid Source CID */
-		case BT_L2CAP_LE_ERR_INVALID_SCID:
 		/* Some connections refused – Source CID already allocated */
-		case BT_L2CAP_LE_ERR_SCID_IN_USE:
+		/* Some connections refused – not enough resources
+		 * available.
+		 */
+		default:
 			/* If a Destination CID is 0x0000, the channel was not
 			 * established.
 			 */
 			dcid[i++] = 0x0000;
 			continue;
-		/* Some connections refused – not enough resources
-		 * available.
-		 */
-		case BT_L2CAP_LE_ERR_NO_RESOURCES:
-		default:
-			goto response;
 		}
 	}
 
 response:
-	if (!i) {
-		i = buf->len / sizeof(scid);
-	}
-
 	buf = l2cap_create_le_sig_pdu(buf, BT_L2CAP_ECRED_CONN_RSP, ident,
 				      sizeof(*rsp) + (sizeof(scid) * i));
 
@@ -2189,6 +2190,12 @@ static void l2cap_chan_le_recv(struct bt_l2cap_le_chan *chan,
 		return;
 	}
 
+	if (buf->len < 2) {
+		BT_WARN("Too short data packet");
+		bt_l2cap_chan_disconnect(&chan->chan);
+		return;
+	}
+
 	sdu_len = net_buf_pull_le16(buf);
 
 	BT_DBG("chan %p len %u sdu_len %u", chan, buf->len, sdu_len);
@@ -2292,7 +2299,7 @@ void bt_l2cap_recv(struct bt_conn *conn, struct net_buf *buf)
 
 	chan = bt_l2cap_le_lookup_rx_cid(conn, cid);
 	if (!chan) {
-		BT_WARN("Ignoring data for unknown CID 0x%04x", cid);
+		BT_WARN("Ignoring data for unknown channel ID 0x%04x", cid);
 		net_buf_unref(buf);
 		return;
 	}

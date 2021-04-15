@@ -78,7 +78,8 @@ static void shell_tdata_dump(const struct k_thread *cthread, void *user_data)
 		      thread->base.user_options,
 		      thread->base.prio,
 		      thread->base.timeout.dticks);
-	shell_print(shell, "\tstate: %s", k_thread_state_str(thread));
+	shell_print(shell, "\tstate: %s, entry: %p", k_thread_state_str(thread),
+		    thread->entry);
 
 #ifdef CONFIG_THREAD_RUNTIME_STATS
 	ret = 0;
@@ -138,7 +139,7 @@ static int cmd_kernel_threads(const struct shell *shell,
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	shell_print(shell, "Scheduler: %u since last call", z_clock_elapsed());
+	shell_print(shell, "Scheduler: %u since last call", sys_clock_elapsed());
 	shell_print(shell, "Threads:");
 	k_thread_foreach(shell_tdata_dump, (void *)shell);
 	return 0;

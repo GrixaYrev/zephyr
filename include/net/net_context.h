@@ -249,11 +249,6 @@ __net_socket struct net_context {
 	net_pkt_get_pool_func_t data_pool;
 #endif /* CONFIG_NET_CONTEXT_NET_PKT_POOL */
 
-#if defined(CONFIG_NET_TCP1)
-	/** TCP connection information */
-	struct net_tcp *tcp;
-#endif /* CONFIG_NET_TCP1 */
-
 #if defined(CONFIG_NET_TCP2)
 	/** TCP connection information */
 	void *tcp;
@@ -307,6 +302,9 @@ __net_socket struct net_context {
 #endif
 #if defined(CONFIG_NET_CONTEXT_RCVTIMEO)
 		k_timeout_t rcvtimeo;
+#endif
+#if defined(CONFIG_NET_CONTEXT_SNDTIMEO)
+		k_timeout_t sndtimeo;
 #endif
 	} options;
 
@@ -1048,6 +1046,7 @@ enum net_context_option {
 	NET_OPT_TXTIME		= 3,
 	NET_OPT_SOCKS5		= 4,
 	NET_OPT_RCVTIMEO        = 5,
+	NET_OPT_SNDTIMEO        = 6,
 };
 
 /**

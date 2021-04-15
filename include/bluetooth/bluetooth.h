@@ -54,6 +54,9 @@ struct bt_le_per_adv_sync;
 /* Don't require everyone to include conn.h */
 struct bt_conn;
 
+/* Don't require everyone to include iso.h */
+struct bt_iso_biginfo;
+
 struct bt_le_ext_adv_sent_info {
 	/** The number of advertising events completed. */
 	uint8_t num_sent;
@@ -136,6 +139,10 @@ int bt_enable(bt_ready_cb_t cb);
  *
  * Set Bluetooth GAP Device Name.
  *
+ * When advertising with device name in the advertising data the name should
+ * be updated by calling @ref bt_le_adv_update_data or
+ * @ref bt_le_ext_adv_set_data.
+ *
  * @param name New name
  *
  * @return Zero on success or (negative) error code otherwise.
@@ -163,9 +170,11 @@ const char *bt_get_name(void);
  * At the moment, the given address must be a static random address. In the
  * future support for public addresses may be added.
  *
+ * @deprecated in 2.5 release, replace with bt_id_create before bt_enable.
+ *
  * @return Zero on success or (negative) error code otherwise.
  */
-int bt_set_id_addr(const bt_addr_le_t *addr);
+__deprecated int bt_set_id_addr(const bt_addr_le_t *addr);
 
 /**
  * @brief Get the currently configured identities.
@@ -175,6 +184,10 @@ int bt_set_id_addr(const bt_addr_le_t *addr);
  * elements in the @a addrs array should be CONFIG_BT_ID_MAX. The identity
  * identifier that some APIs expect (such as advertising parameters) is
  * simply the index of the identity in the @a addrs array.
+ *
+ * If @a addrs is passed as NULL, then returned @a count contains the
+ * count of all available identities that can be retrieved with a
+ * subsequent call to this function with non-NULL @a addrs parameter.
  *
  * @note Deleted identities may show up as BT_LE_ADDR_ANY in the returned
  * array.
@@ -200,6 +213,9 @@ void bt_id_get(bt_addr_le_t *addrs, size_t *count);
  * the address from and will be able to repeat the procedure on every power
  * cycle, i.e. it would be redundant to also store the information in flash.
  *
+ * Generating random static address or random IRK is not supported when calling
+ * this function before bt_enable().
+ *
  * If the application wants to have the stack randomly generate identities
  * and store them in flash for later recovery, the way to do it would be
  * to first initialize the stack (using bt_enable), then call settings_load(),
@@ -208,8 +224,8 @@ void bt_id_get(bt_addr_le_t *addrs, size_t *count);
  * call bt_id_create() to create new ones.
  *
  * @param addr Address to use for the new identity. If NULL or initialized
- *             to BT_ADDR_LE_ANY the stack will generate a new static
- *             random address for the identity and copy it to the given
+ *             to BT_ADDR_LE_ANY the stack will generate a new random
+ *             static address for the identity and copy it to the given
  *             parameter upon return from this function (in case the
  *             parameter was non-NULL).
  * @param irk  Identity Resolving Key (16 bytes) to be used with this
@@ -363,7 +379,23 @@ enum {
 	 */
 	BT_LE_ADV_OPT_USE_IDENTITY = BIT(2),
 
-	/** Advertise using GAP device name */
+	/** Advertise using GAP device name.
+	 *
+	 *  Include the GAP device name automatically when advertising.
+	 *  By default the GAP device name is put at the end of the scan
+	 *  response data.
+	 *  When advertising using @ref BT_LE_ADV_OPT_EXT_ADV and not
+	 *  @ref BT_LE_ADV_OPT_SCANNABLE then it will be put at the end of the
+	 *  advertising data.
+	 *  If the GAP device name does not fit into advertising data it will be
+	 *  converted to a shortened name if possible.
+	 *
+	 *  The application can set the device name itself by including the
+	 *  following in the advertising data.
+	 *  @code
+	 *  BT_DATA(BT_DATA_NAME_COMPLETE, name, strlen(name))
+	 *  @endcode
+	 */
 	BT_LE_ADV_OPT_USE_NAME = BIT(3),
 
 	/**
@@ -1162,6 +1194,17 @@ struct bt_le_per_adv_sync_cb {
 	void (*state_changed)(struct bt_le_per_adv_sync *sync,
 			      const struct bt_le_per_adv_sync_state_info *info);
 
+	/**
+	 * @brief BIGInfo advertising report received.
+	 *
+	 * This callback notifies the application of a BIGInfo advertising report.
+	 * This is received if the advertiser is broadcasting isochronous streams in a BIG.
+	 * See iso.h for more information.
+	 *
+	 * @param sync     The advertising set object.
+	 * @param biginfo  The BIGInfo report.
+	 */
+	void (*biginfo)(struct bt_le_per_adv_sync *sync, const struct bt_iso_biginfo *biginfo);
 
 	sys_snode_t node;
 };

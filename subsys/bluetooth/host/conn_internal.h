@@ -99,10 +99,23 @@ struct bt_conn_sco {
 struct bt_conn_iso {
 	/* Reference to ACL Connection */
 	struct bt_conn          *acl;
-	/* CIG ID */
-	uint8_t			cig_id;
-	/* CIS ID */
-	uint8_t			cis_id;
+	union {
+		/* CIG ID */
+		uint8_t			cig_id;
+		/* BIG handle */
+		uint8_t			big_handle;
+	};
+
+	union {
+		/* CIS ID */
+		uint8_t			cis_id;
+
+		/* BIS ID */
+		uint8_t			bis_id;
+	};
+
+	/** If true, this is a ISO for a BIS, else it is a ISO for a CIS */
+	bool is_bis;
 };
 
 typedef void (*bt_conn_tx_cb_t)(struct bt_conn *conn, void *user_data);
@@ -182,7 +195,7 @@ struct bt_conn {
 		struct bt_conn_br	br;
 		struct bt_conn_sco	sco;
 #endif
-#if defined(CONFIG_BT_AUDIO)
+#if defined(CONFIG_BT_ISO)
 		struct bt_conn_iso	iso;
 #endif
 	};

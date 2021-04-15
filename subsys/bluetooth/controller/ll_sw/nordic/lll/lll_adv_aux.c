@@ -25,7 +25,10 @@
 #include "lll_vendor.h"
 #include "lll_clock.h"
 #include "lll_chan.h"
+#include "lll_conn.h"
+#include "lll_adv_types.h"
 #include "lll_adv.h"
+#include "lll_adv_pdu.h"
 #include "lll_adv_aux.h"
 #include "lll_filter.h"
 
@@ -54,7 +57,9 @@ static inline int isr_rx_pdu(struct lll_adv_aux *lll_aux,
 			     uint8_t devmatch_ok, uint8_t devmatch_id,
 			     uint8_t irkmatch_ok, uint8_t irkmatch_id,
 			     uint8_t rssi_ready);
+#if defined(CONFIG_BT_PERIPHERAL)
 static void isr_tx_connect_rsp(void *param);
+#endif /* CONFIG_BT_PERIPHERAL */
 
 static struct pdu_adv *init_connect_rsp_pdu(void)
 {
@@ -101,6 +106,7 @@ static struct pdu_adv *init_connect_rsp_pdu(void)
 	return pdu;
 }
 
+#if defined(CONFIG_BT_PERIPHERAL)
 static struct pdu_adv *update_connect_rsp_pdu(struct pdu_adv *pdu_ci)
 {
 	struct pdu_adv_com_ext_adv *cr_com_hdr;
@@ -125,6 +131,7 @@ static struct pdu_adv *update_connect_rsp_pdu(struct pdu_adv *pdu_ci)
 
 	return pdu_cr;
 }
+#endif /* CONFIG_BT_PERIPHERAL */
 
 int lll_adv_aux_init(void)
 {
@@ -200,6 +207,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 	/* FIXME: get latest only when primary PDU without Aux PDUs */
 	sec_pdu = lll_adv_aux_data_latest_get(lll, &upd);
+	LL_ASSERT(sec_pdu);
 
 	/* Get reference to primary PDU */
 	lll_adv = lll->adv;
@@ -270,6 +278,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 		struct pdu_adv *scan_pdu;
 
 		scan_pdu = lll_adv_scan_rsp_latest_get(lll_adv, &upd);
+		LL_ASSERT(scan_pdu);
 
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 		if (upd) {
@@ -483,7 +492,6 @@ static inline int isr_rx_pdu(struct lll_adv_aux *lll_aux,
 	struct pdu_adv *pdu_adv;
 	struct pdu_adv *pdu_aux;
 	struct pdu_adv *pdu_rx;
-	struct pdu_adv *pdu_tx;
 	struct lll_adv *lll;
 	uint8_t *tgt_addr;
 	uint8_t tx_addr;
@@ -504,6 +512,7 @@ static inline int isr_rx_pdu(struct lll_adv_aux *lll_aux,
 	pdu_rx = (void *)radio_pkt_scratch_get();
 	pdu_adv = lll_adv_data_curr_get(lll);
 	pdu_aux = lll_adv_aux_data_latest_get(lll_aux, &upd);
+	LL_ASSERT(pdu_aux);
 
 	hdr = &pdu_aux->adv_ext_ind.ext_hdr;
 
@@ -561,13 +570,17 @@ static inline int isr_rx_pdu(struct lll_adv_aux *lll_aux,
 					 CONFIG_BT_CTLR_GPIO_PA_OFFSET);
 #endif /* CONFIG_BT_CTLR_GPIO_PA_PIN */
 		return 0;
+
+#if defined(CONFIG_BT_PERIPHERAL)
 	} else if ((pdu_rx->type == PDU_ADV_TYPE_AUX_CONNECT_REQ) &&
 		   (pdu_rx->len == sizeof(struct pdu_adv_connect_ind)) &&
 		   lll_adv_connect_ind_check(lll, pdu_rx, tx_addr, addr,
 					     rx_addr, tgt_addr,
-					     devmatch_ok, &rl_idx)) {
+					     devmatch_ok, &rl_idx) &&
+		   lll->conn) {
 		struct node_rx_ftr *ftr;
 		struct node_rx_pdu *rx;
+		struct pdu_adv *pdu_tx;
 
 		if (IS_ENABLED(CONFIG_BT_CTLR_CHAN_SEL_2)) {
 			rx = ull_pdu_rx_alloc_peek(4);
@@ -632,18 +645,19 @@ static inline int isr_rx_pdu(struct lll_adv_aux *lll_aux,
 		}
 
 		return 0;
+#endif /* CONFIG_BT_PERIPHERAL */
 	}
 
 	return -EINVAL;
 }
 
+#if defined(CONFIG_BT_PERIPHERAL)
 static void isr_tx_connect_rsp(void *param)
 {
 	struct node_rx_ftr *ftr;
 	struct node_rx_pdu *rx;
 	struct lll_adv *lll;
 	bool is_done;
-	int ret;
 
 	rx = param;
 	ftr = &(rx->hdr.rx_ftr);
@@ -671,11 +685,11 @@ static void isr_tx_connect_rsp(void *param)
 
 	if (is_done) {
 		/* Stop further LLL radio events */
-		ret = lll_stop(lll);
-		LL_ASSERT(!ret);
+		lll->conn->initiated = 1;
 	}
 
 	/* Clear radio status and events */
 	lll_isr_status_reset();
 	lll_isr_cleanup(lll);
 }
+#endif /* CONFIG_BT_PERIPHERAL */

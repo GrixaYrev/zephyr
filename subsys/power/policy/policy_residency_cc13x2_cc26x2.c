@@ -54,11 +54,10 @@ struct pm_state_info pm_policy_next_state(int32_t ticks)
 	}
 
 	for (i = ARRAY_SIZE(residency_info) - 1; i >= 0; i--) {
-#ifdef CONFIG_PM_STATE_LOCK
-		if (!pm_ctrl_is_state_enabled(residency_info[i].state)) {
+		if (!pm_constraint_get(residency_info[i].state)) {
 			continue;
 		}
-#endif
+
 		if ((ticks <
 		     k_us_to_ticks_ceil32(residency_info[i].min_residency_us))
 		    && (ticks != K_TICKS_FOREVER)) {
@@ -136,9 +135,4 @@ struct pm_state_info pm_policy_next_state(int32_t ticks)
 
 	LOG_DBG("No suitable power state found!");
 	return STATE_ACTIVE;
-}
-
-__weak bool pm_policy_low_power_devices(enum pm_state state)
-{
-	return state == PM_STATE_STANDBY;
 }

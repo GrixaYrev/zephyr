@@ -20,6 +20,7 @@
 #include <mmu.h>
 #include <drivers/interrupt_controller/loapic.h>
 #include <mmu.h>
+#include <arch/x86/memmap.h>
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
@@ -297,7 +298,7 @@ static inline uintptr_t get_entry_phys(pentry_t entry, int level)
 /* Return the virtual address of a linked table stored in the provided entry */
 static inline pentry_t *next_table(pentry_t entry, int level)
 {
-	return z_x86_virt_addr(get_entry_phys(entry, level));
+	return z_mem_virt_addr(get_entry_phys(entry, level));
 }
 
 /* Number of table entries at this level */
@@ -391,12 +392,12 @@ void z_x86_tlb_ipi(const void *arg)
 	 * if KPTI is turned on
 	 */
 	ptables_phys = z_x86_cr3_get();
-	__ASSERT(ptables_phys == z_x86_phys_addr(&z_x86_kernel_ptables), "");
+	__ASSERT(ptables_phys == z_mem_phys_addr(&z_x86_kernel_ptables), "");
 #else
 	/* We might have been moved to another memory domain, so always invoke
 	 * z_x86_thread_page_tables_get() instead of using current CR3 value.
 	 */
-	ptables_phys = z_x86_phys_addr(z_x86_thread_page_tables_get(_current));
+	ptables_phys = z_mem_phys_addr(z_x86_thread_page_tables_get(_current));
 #endif
 	/*
 	 * In the future, we can consider making this smarter, such as
@@ -516,9 +517,12 @@ static void print_entries(pentry_t entries_array[], uint8_t *base, int level,
 				if (phys == virt) {
 					/* Identity mappings */
 					COLOR(YELLOW);
-				} else {
-					/* Other mappings */
+				} else if (phys + Z_MEM_VM_OFFSET == virt) {
+					/* Permanent RAM mappings */
 					COLOR(GREEN);
+				} else {
+					/* General mapped pages */
+					COLOR(CYAN);
 				}
 			} else {
 				/* Intermediate entry */
@@ -579,7 +583,8 @@ static void dump_ptables(pentry_t *table, uint8_t *base, int level)
 	}
 #endif
 
-	printk("%s at %p: ", info->name, table);
+	printk("%s at %p (0x%" PRIxPTR "): ", info->name, table,
+	       z_mem_phys_addr(table));
 	if (level == 0) {
 		printk("entire address space\n");
 	} else {
@@ -735,7 +740,7 @@ static inline pentry_t pte_finalize_value(pentry_t val, bool user_table)
 {
 #ifdef CONFIG_X86_KPTI
 	static const uintptr_t shared_phys_addr =
-		(uintptr_t)Z_X86_PHYS_ADDR(&z_shared_kernel_page_start);
+		Z_MEM_PHYS_ADDR(POINTER_TO_UINT(&z_shared_kernel_page_start));
 
 	if (user_table && (val & MMU_US) == 0 && (val & MMU_P) != 0 &&
 	    get_entry_phys(val, PTE_LEVEL) != shared_phys_addr) {
@@ -1110,6 +1115,42 @@ void arch_mem_map(void *virt, uintptr_t phys, size_t size, uint32_t flags)
 			   MASK_ALL, 0);
 }
 
+static void identity_map_remove(void)
+{
+#ifdef Z_VM_KERNEL
+	size_t size, scope = get_entry_scope(0);
+	uint8_t *pos;
+
+	k_mem_region_align((uintptr_t *)&pos, &size,
+			   (uintptr_t)CONFIG_SRAM_BASE_ADDRESS,
+			   (size_t)CONFIG_SRAM_SIZE * 1024U, scope);
+
+	/* We booted with RAM mapped both to its identity and virtual
+	 * mapping starting at CONFIG_KERNEL_VM_BASE. This was done by
+	 * double-linking the relevant tables in the top-level table.
+	 * At this point we don't need the identity mapping(s) any more,
+	 * zero the top-level table entries corresponding to the
+	 * physical mapping.
+	 */
+	while (size) {
+		pentry_t *entry = get_entry_ptr(z_x86_kernel_ptables, pos, 0);
+
+		/* set_pte */
+		*entry = 0;
+		pos += scope;
+		size -= scope;
+	}
+#endif
+}
+
+/* Invoked to remove the identity mappings in the page tables,
+ * they were only needed to tranisition the instruction pointer at early boot
+ */
+void z_x86_mmu_init(void)
+{
+	identity_map_remove();
+}
+
 #if CONFIG_X86_STACK_PROTECTION
 void z_x86_set_stack_guard(k_thread_stack_t *stack)
 {
@@ -1349,11 +1390,6 @@ void arch_mem_domain_thread_remove(struct k_thread *thread)
 {
 
 }
-
-void arch_mem_domain_destroy(struct k_mem_domain *domain)
-{
-
-}
 #else
 /* Memory domains each have a set of page tables assigned to them */
 
@@ -1444,7 +1480,7 @@ static int copy_page_table(pentry_t *dst, pentry_t *src, int level)
 			 * cast needed for PAE case where sizeof(void *) and
 			 * sizeof(pentry_t) are not the same.
 			 */
-			dst[i] = ((pentry_t)z_x86_phys_addr(child_dst) |
+			dst[i] = ((pentry_t)z_mem_phys_addr(child_dst) |
 				  INT_FLAGS);
 
 			ret = copy_page_table(child_dst,
@@ -1580,11 +1616,6 @@ void arch_mem_domain_partition_remove(struct k_mem_domain *domain,
 		     partition->size);
 }
 
-void arch_mem_domain_destroy(struct k_mem_domain *domain)
-{
-	/* No-op, this is eventually getting removed in 2.5 */
-}
-
 /* Called on thread exit or when moving it to a different memory domain */
 void arch_mem_domain_thread_remove(struct k_thread *thread)
 {
@@ -1597,7 +1628,7 @@ void arch_mem_domain_thread_remove(struct k_thread *thread)
 	if ((thread->base.thread_state & _THREAD_DEAD) == 0) {
 		/* Thread is migrating to another memory domain and not
 		 * exiting for good; we weren't called from
-		 * z_thread_single_abort().  Resetting the stack region will
+		 * z_thread_abort().  Resetting the stack region will
 		 * take place in the forthcoming thread_add() call.
 		 */
 		return;
@@ -1626,9 +1657,12 @@ void arch_mem_domain_thread_add(struct k_thread *thread)
 	/* New memory domain we are being added to */
 	struct k_mem_domain *domain = thread->mem_domain_info.mem_domain;
 	/* This is only set for threads that were migrating from some other
-	 * memory domain; new threads this is NULL
+	 * memory domain; new threads this is NULL.
+	 *
+	 * Note that NULL check on old_ptables must be done before any
+	 * address translation or else (NULL + offset) != NULL.
 	 */
-	pentry_t *old_ptables = z_x86_virt_addr(thread->arch.ptables);
+	pentry_t *old_ptables = UINT_TO_POINTER(thread->arch.ptables);
 	bool is_user = (thread->base.user_options & K_USER) != 0;
 	bool is_migration = (old_ptables != NULL) && is_user;
 
@@ -1637,10 +1671,11 @@ void arch_mem_domain_thread_add(struct k_thread *thread)
 	 * z_x86_current_stack_perms()
 	 */
 	if (is_migration) {
+		old_ptables = z_mem_virt_addr(thread->arch.ptables);
 		set_stack_perms(thread, domain->arch.ptables);
 	}
 
-	thread->arch.ptables = z_x86_phys_addr(domain->arch.ptables);
+	thread->arch.ptables = z_mem_phys_addr(domain->arch.ptables);
 	LOG_DBG("set thread %p page tables to %p", thread,
 		(void *)thread->arch.ptables);
 
@@ -1704,21 +1739,61 @@ void z_x86_current_stack_perms(void)
 #endif /* CONFIG_USERSPACE */
 
 #ifdef CONFIG_ARCH_HAS_RESERVED_PAGE_FRAMES
-/* Selected on PC-like targets at the SOC level.
- *
- * Best is to do some E820 or similar enumeration to specifically identify
- * all page frames which are reserved by the hardware or firmware.
- *
- * For now, just reserve everything in the first megabyte of physical memory.
- */
-void arch_reserved_pages_update(void)
+static void mark_addr_page_reserved(uintptr_t addr, size_t len)
 {
-	for (uintptr_t pos = 0; pos < (1024 * 1024);
-	     pos += CONFIG_MMU_PAGE_SIZE) {
+	uintptr_t pos = ROUND_DOWN(addr, CONFIG_MMU_PAGE_SIZE);
+	uintptr_t end = ROUND_UP(addr + len, CONFIG_MMU_PAGE_SIZE);
+
+	for (; pos < end; pos += CONFIG_MMU_PAGE_SIZE) {
+		if (!z_is_page_frame(pos)) {
+			continue;
+		}
+
 		struct z_page_frame *pf = z_phys_to_page_frame(pos);
 
 		pf->flags |= Z_PAGE_FRAME_RESERVED;
+
+		z_free_page_count--;
 	}
+}
+
+void arch_reserved_pages_update(void)
+{
+#ifdef CONFIG_X86_PC_COMPATIBLE
+	/*
+	 * Best is to do some E820 or similar enumeration to specifically
+	 * identify all page frames which are reserved by the hardware or
+	 * firmware. Or use x86_memmap[] with Multiboot if available.
+	 *
+	 * But still, reserve everything in the first megabyte of physical
+	 * memory on PC-compatible platforms.
+	 */
+	mark_addr_page_reserved(0, MB(1));
+#endif /* CONFIG_X86_PC_COMPATIBLE */
+
+#ifdef CONFIG_X86_MEMMAP
+	for (int i = 0; i < CONFIG_X86_MEMMAP_ENTRIES; i++) {
+		struct x86_memmap_entry *entry = &x86_memmap[i];
+
+		switch (entry->type) {
+		case X86_MEMMAP_ENTRY_UNUSED:
+			__fallthrough;
+		case X86_MEMMAP_ENTRY_RAM:
+			continue;
+
+		case X86_MEMMAP_ENTRY_ACPI:
+			__fallthrough;
+		case X86_MEMMAP_ENTRY_NVS:
+			__fallthrough;
+		case X86_MEMMAP_ENTRY_DEFECTIVE:
+			__fallthrough;
+		default:
+			break;
+		}
+
+		mark_addr_page_reserved(entry->base, entry->length);
+	}
+#endif /* CONFIG_X86_MEMMAP */
 }
 #endif /* CONFIG_ARCH_HAS_RESERVED_PAGE_FRAMES */
 
