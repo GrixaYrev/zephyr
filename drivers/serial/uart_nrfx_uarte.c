@@ -489,7 +489,9 @@ static int wait_tx_ready(const struct device *dev)
 
 			irq_unlock(key);
 		}
-		k_msleep(1);
+		if (IS_ENABLED(CONFIG_MULTITHREADING)) {
+			k_msleep(1);
+		}
 	} while (1);
 
 	return key;
@@ -642,7 +644,8 @@ static int uarte_nrfx_init(const struct device *dev)
 	 */
 	if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_RXSTARTED)) {
 		nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPRX);
-		while (!nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_RXTO)) {
+		while (!nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_RXTO) &&
+		       !nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ERROR)) {
 			/* Busy wait for event to register */
 		}
 		nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_RXSTARTED);
@@ -1155,7 +1158,7 @@ static uint8_t rx_flush(const struct device *dev, uint8_t *buf, uint32_t len)
 		return rx_amount;
 	}
 
-	for (int i = 0; i < 0; i++) {
+	for (int i = 0; i < flush_len; i++) {
 		if (buf[i] != dirty) {
 			return rx_amount;
 		}
@@ -1845,7 +1848,9 @@ static void uarte_nrfx_set_power_state(const struct device *dev,
 #endif
 			nrf_uarte_task_trigger(uarte, NRF_UARTE_TASK_STOPRX);
 			while (!nrf_uarte_event_check(uarte,
-						      NRF_UARTE_EVENT_RXTO)) {
+						      NRF_UARTE_EVENT_RXTO) &&
+			       !nrf_uarte_event_check(uarte,
+			                              NRF_UARTE_EVENT_ERROR)) {
 				/* Busy wait for event to register */
 			}
 			nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_RXSTARTED);

@@ -69,7 +69,7 @@ static int create_log_dir(const char *path)
 		return 0;
 	}
 
-	while (1) {
+	while (true) {
 		next++;
 		if (next > last) {
 			return 0;
@@ -116,7 +116,7 @@ static int check_log_file_exist(int num)
 		return -EIO;
 	}
 
-	while (1) {
+	while (true) {
 		rc = fs_readdir(&dir, &ent);
 		if (rc < 0) {
 			(void) fs_closedir(&dir);
@@ -203,7 +203,11 @@ int write_log_to_file(uint8_t *data, size_t length, void *ctx)
 			length = 0;
 		}
 
-		fs_sync(f);
+		rc = fs_sync(f);
+		if (rc < 0) {
+			/* Something is wrong */
+			goto on_error;
+		}
 	}
 
 	return length;
@@ -390,7 +394,7 @@ static int del_oldest_log(void)
 	int rc;
 	static char dellname[MAX_PATH_LEN];
 
-	while (1) {
+	while (true) {
 		snprintf(dellname, sizeof(dellname), "%s/%s%04d",
 			 CONFIG_LOG_BACKEND_FS_DIR,
 			 CONFIG_LOG_BACKEND_FS_FILE_PREFIX, oldest);

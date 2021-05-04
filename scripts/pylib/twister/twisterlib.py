@@ -63,9 +63,9 @@ if not ZEPHYR_BASE:
     sys.exit("$ZEPHYR_BASE environment variable undefined")
 
 # This is needed to load edt.pickle files.
-sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts", "dts"))
-import edtlib  # pylint: disable=unused-import
-
+sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts", "dts",
+                                "python-devicetree", "src"))
+from devicetree import edtlib  # pylint: disable=unused-import
 
 # Use this for internal comparisons; that's what canonicalization is
 # for. Don't use it when invoking other components of the build system
@@ -1810,7 +1810,7 @@ class TestInstance(DisablePyTestCollectionMixin):
 
         target_ready = bool(self.testcase.type == "unit" or \
                         self.platform.type == "native" or \
-                        self.platform.simulation in ["mdb-nsim", "nsim", "renode", "qemu", "tsim"] or \
+                        self.platform.simulation in ["mdb-nsim", "nsim", "renode", "qemu", "tsim", "armfvp"] or \
                         filter == 'runnable')
 
         if self.platform.simulation == "nsim":
@@ -2268,6 +2268,9 @@ class ProjectBuilder(FilterBuilder):
                 instance.handler = BinaryHandler(instance, "nsim")
                 instance.handler.pid_fn = os.path.join(instance.build_dir, "mdb.pid")
                 instance.handler.call_west_flash = True
+        elif instance.platform.simulation == "armfvp":
+            instance.handler = BinaryHandler(instance, "armfvp")
+            instance.handler.call_make_run = True
 
         if instance.handler:
             instance.handler.args = args
@@ -2547,6 +2550,9 @@ class TestSuite(DisablePyTestCollectionMixin):
     tc_schema = scl.yaml_load(
         os.path.join(ZEPHYR_BASE,
                      "scripts", "schemas", "twister", "testcase-schema.yaml"))
+    quarantine_schema = scl.yaml_load(
+        os.path.join(ZEPHYR_BASE,
+                     "scripts", "schemas", "twister", "quarantine-schema.yaml"))
 
     testcase_valid_keys = {"tags": {"type": "set", "required": False},
                        "type": {"type": "str", "default": "integration"},
@@ -2609,9 +2615,11 @@ class TestSuite(DisablePyTestCollectionMixin):
         self.generator_cmd = None
         self.warnings_as_errors = True
         self.overflow_as_errors = False
+        self.quarantine_verify = False
 
         # Keep track of which test cases we've filtered out and why
         self.testcases = {}
+        self.quarantine = {}
         self.platforms = []
         self.selected_platforms = []
         self.filtered_platforms = []
@@ -2885,7 +2893,7 @@ class TestSuite(DisablePyTestCollectionMixin):
 
             logger.debug("Reading test case configuration files under %s..." % root)
 
-            for dirpath, dirnames, filenames in os.walk(root, topdown=True):
+            for dirpath, _, filenames in os.walk(root, topdown=True):
                 if self.SAMPLE_FILENAME in filenames:
                     filename = self.SAMPLE_FILENAME
                 elif self.TESTCASE_FILENAME in filenames:
@@ -2895,7 +2903,6 @@ class TestSuite(DisablePyTestCollectionMixin):
 
                 logger.debug("Found possible test case in " + dirpath)
 
-                dirnames[:] = []
                 tc_path = os.path.join(dirpath, filename)
 
                 try:
@@ -2959,6 +2966,34 @@ class TestSuite(DisablePyTestCollectionMixin):
                 selected_platform = platform
                 break
         return selected_platform
+
+    def load_quarantine(self, file):
+        """
+        Loads quarantine list from the given yaml file. Creates a dictionary
+        of all tests configurations (platform + scenario: comment) that shall be
+        skipped due to quarantine
+        """
+
+        # Load yaml into quarantine_yaml
+        quarantine_yaml = scl.yaml_load_verify(file, self.quarantine_schema)
+
+        # Create quarantine_list with a product of the listed
+        # platforms and scenarios for each entry in quarantine yaml
+        quarantine_list = []
+        for quar_dict in quarantine_yaml:
+            if quar_dict['platforms'][0] == "all":
+                plat = [p.name for p in self.platforms]
+            else:
+                plat = quar_dict['platforms']
+            comment = quar_dict.get('comment', "NA")
+            quarantine_list.append([{".".join([p, s]): comment}
+                                   for p in plat for s in quar_dict['scenarios']])
+
+        # Flatten the quarantine_list
+        quarantine_list = [it for sublist in quarantine_list for it in sublist]
+        # Change quarantine_list into a dictionary
+        for d in quarantine_list:
+            self.quarantine.update(d)
 
     def load_from_file(self, file, filter_status=[], filter_platform=[]):
         try:
@@ -3054,6 +3089,18 @@ class TestSuite(DisablePyTestCollectionMixin):
                                          self.platforms))
             else:
                 platform_scope = platforms
+
+            integration = self.integration and tc.integration_platforms
+
+            # If there isn't any overlap between the platform_allow list and the platform_scope
+            # we set the scope to the platform_allow list
+            if tc.platform_allow and not platform_filter and not integration:
+                a = set(platform_scope)
+                b = set(filter(lambda item: item.name in tc.platform_allow, self.platforms))
+                c = a.intersection(b)
+                if not c:
+                    platform_scope = list(filter(lambda item: item.name in tc.platform_allow, \
+                                             self.platforms))
 
             # list of instances per testcase, aka configurations.
             instance_list = []
@@ -3155,6 +3202,16 @@ class TestSuite(DisablePyTestCollectionMixin):
                 if plat.only_tags and not set(plat.only_tags) & tc.tags:
                     discards[instance] = discards.get(instance, "Excluded tags per platform (only_tags)")
 
+                test_configuration = ".".join([instance.platform.name,
+                                               instance.testcase.id])
+                # skip quarantined tests
+                if test_configuration in self.quarantine and not self.quarantine_verify:
+                    discards[instance] = discards.get(instance,
+                                                      f"Quarantine: {self.quarantine[test_configuration]}")
+                # run only quarantined test to verify their statuses (skip everything else)
+                if self.quarantine_verify and test_configuration not in self.quarantine:
+                    discards[instance] = discards.get(instance, "Not under quarantine")
+
                 # if nothing stopped us until now, it means this configuration
                 # needs to be added.
                 instance_list.append(instance)
@@ -3163,7 +3220,6 @@ class TestSuite(DisablePyTestCollectionMixin):
             if not instance_list:
                 continue
 
-            integration = self.integration and tc.integration_platforms
             # if twister was launched with no platform options at all, we
             # take all default platforms
             if default_platforms and not tc.build_on_all and not integration:
@@ -3175,7 +3231,7 @@ class TestSuite(DisablePyTestCollectionMixin):
                         aa = list(filter(lambda tc: tc.platform.name in c, instance_list))
                         self.add_instances(aa)
                     else:
-                        self.add_instances(instance_list[:1])
+                        self.add_instances(instance_list)
                 else:
                     instances = list(filter(lambda tc: tc.platform.default, instance_list))
                     self.add_instances(instances)
@@ -3200,8 +3256,16 @@ class TestSuite(DisablePyTestCollectionMixin):
 
         for instance in self.discards:
             instance.reason = self.discards[instance]
-            instance.status = "skipped"
-            instance.fill_results_by_status()
+            # If integration mode is on all skips on integration_platforms are treated as errors.
+            # TODO: add quarantine relief here when PR with quarantine feature gets merged
+            if self.integration and instance.platform.name in instance.testcase.integration_platforms:
+                instance.status = "error"
+                instance.reason += " but is one of the integration platforms"
+                instance.fill_results_by_status()
+                self.instances[instance.name] = instance
+            else:
+                instance.status = "skipped"
+                instance.fill_results_by_status()
 
         self.filtered_platforms = set(p.platform.name for p in self.instances.values()
                                       if p.status != "skipped" )
@@ -3239,6 +3303,9 @@ class TestSuite(DisablePyTestCollectionMixin):
                     logger.debug(f"adding {instance.name}")
                     instance.status = None
                     pipeline.put({"op": "cmake", "test": instance})
+                # If the instance got 'error' status before, proceed to the report stage
+                if instance.status == "error":
+                    pipeline.put({"op": "report", "test": instance})
 
     def pipeline_mgr(self, pipeline, done_queue, lock, results):
         while True:
@@ -3594,14 +3661,15 @@ class TestSuite(DisablePyTestCollectionMixin):
                                 "arch": instance.platform.arch,
                                 "platform": p,
                                 }
+                    if ram_size:
+                        testcase["ram_size"] = ram_size
+                    if rom_size:
+                        testcase["rom_size"] = rom_size
+
                     if instance.results[k] in ["PASS"]:
                         testcase["status"] = "passed"
                         if instance.handler:
                             testcase["execution_time"] =  handler_time
-                        if ram_size:
-                            testcase["ram_size"] = ram_size
-                        if rom_size:
-                            testcase["rom_size"] = rom_size
 
                     elif instance.results[k] in ['FAIL', 'BLOCK'] or instance.status in ["error", "failed", "timeout"]:
                         testcase["status"] = "failed"
@@ -4104,38 +4172,3 @@ class HardwareMap:
                 table.append([platform, p.id, p.serial])
 
         print(tabulate(table, headers=header, tablefmt="github"))
-
-
-def size_report(sc):
-    logger.info(sc.filename)
-    logger.info("SECTION NAME             VMA        LMA     SIZE  HEX SZ TYPE")
-    for i in range(len(sc.sections)):
-        v = sc.sections[i]
-
-        logger.info("%-17s 0x%08x 0x%08x %8d 0x%05x %-7s" %
-                    (v["name"], v["virt_addr"], v["load_addr"], v["size"], v["size"],
-                     v["type"]))
-
-    logger.info("Totals: %d bytes (ROM), %d bytes (RAM)" %
-                (sc.rom_size, sc.ram_size))
-    logger.info("")
-
-
-
-def export_tests(filename, tests):
-    with open(filename, "wt") as csvfile:
-        fieldnames = ['section', 'subsection', 'title', 'reference']
-        cw = csv.DictWriter(csvfile, fieldnames, lineterminator=os.linesep)
-        for test in tests:
-            data = test.split(".")
-            if len(data) > 1:
-                subsec = " ".join(data[1].split("_")).title()
-                rowdict = {
-                    "section": data[0].capitalize(),
-                    "subsection": subsec,
-                    "title": test,
-                    "reference": test
-                }
-                cw.writerow(rowdict)
-            else:
-                logger.info("{} can't be exported".format(test))

@@ -26,7 +26,7 @@ from zephyr_ext_common import ZEPHYR_SCRIPTS
 
 # Runners depend on edtlib. Make sure the copy in the tree is
 # available to them before trying to import any.
-sys.path.append(str(ZEPHYR_SCRIPTS / 'dts'))
+sys.path.append(str(ZEPHYR_SCRIPTS / 'dts' / 'python-devicetree' / 'src'))
 
 from runners import get_runner_cls, ZephyrBinaryRunner, MissingProgram
 from runners.core import RunnerConfig
@@ -272,9 +272,8 @@ def load_cmake_cache(build_dir, args):
 
 def rebuild(command, build_dir, args):
     _banner(f'west {command.name}: rebuilding')
-    extra_args = ['--target', 'west_' + command.name + '_depends']
     try:
-        zcmake.run_build(build_dir, extra_args=extra_args)
+        zcmake.run_build(build_dir)
     except CalledProcessError:
         if args.build_dir:
             log.die(f're-build in {args.build_dir} failed')

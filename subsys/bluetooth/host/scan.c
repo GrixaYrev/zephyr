@@ -7,6 +7,7 @@
 #include <sys/types.h>
 
 #include <sys/byteorder.h>
+#include <sys/check.h>
 
 #include <bluetooth/bluetooth.h>
 #include <bluetooth/iso.h>
@@ -1098,6 +1099,40 @@ uint8_t bt_le_per_adv_sync_get_index(struct bt_le_per_adv_sync *per_adv_sync)
 	return (uint8_t)index;
 }
 
+int bt_le_per_adv_sync_get_info(struct bt_le_per_adv_sync *per_adv_sync,
+				struct bt_le_per_adv_sync_info *info)
+{
+	CHECKIF(per_adv_sync == NULL || info == NULL) {
+		return -EINVAL;
+	}
+
+	bt_addr_le_copy(&info->addr, &per_adv_sync->addr);
+	info->sid = per_adv_sync->sid;
+	info->phy = per_adv_sync->phy;
+	info->interval = per_adv_sync->interval;
+
+	return 0;
+}
+
+struct bt_le_per_adv_sync *bt_le_per_adv_sync_lookup_addr(const bt_addr_le_t *adv_addr,
+							  uint8_t sid)
+{
+	for (int i = 0; i < ARRAY_SIZE(per_adv_sync_pool); i++) {
+		struct bt_le_per_adv_sync *sync = &per_adv_sync_pool[i];
+
+		if (!atomic_test_bit(per_adv_sync_pool[i].flags,
+				     BT_PER_ADV_SYNC_CREATED)) {
+			continue;
+		}
+
+		if (!bt_addr_le_cmp(&sync->addr, adv_addr) && sync->sid == sid) {
+			return sync;
+		}
+	}
+
+	return NULL;
+}
+
 int bt_le_per_adv_sync_create(const struct bt_le_per_adv_sync_param *param,
 			      struct bt_le_per_adv_sync **out_sync)
 {
@@ -1115,8 +1150,9 @@ int bt_le_per_adv_sync_create(const struct bt_le_per_adv_sync_param *param,
 	}
 
 	if (param->sid > BT_GAP_SID_MAX ||
-		   param->skip > BT_GAP_PER_ADV_MAX_MAX_SKIP ||
-		   param->timeout > BT_GAP_PER_ADV_MAX_MAX_TIMEOUT) {
+		   param->skip > BT_GAP_PER_ADV_MAX_SKIP ||
+		   param->timeout > BT_GAP_PER_ADV_MAX_TIMEOUT ||
+		   param->timeout < BT_GAP_PER_ADV_MIN_TIMEOUT) {
 		return -EINVAL;
 	}
 
@@ -1246,6 +1282,10 @@ int bt_le_per_adv_sync_delete(struct bt_le_per_adv_sync *per_adv_sync)
 {
 	int err = 0;
 
+	if (!BT_FEAT_LE_EXT_PER_ADV(bt_dev.le.features)) {
+		return -ENOTSUP;
+	}
+
 	if (atomic_test_bit(per_adv_sync->flags, BT_PER_ADV_SYNC_SYNCED)) {
 		err = bt_le_per_adv_sync_terminate(per_adv_sync);
 
@@ -1349,8 +1389,11 @@ int bt_le_per_adv_sync_transfer(const struct bt_le_per_adv_sync *per_adv_sync,
 	struct bt_hci_cp_le_per_adv_sync_transfer *cp;
 	struct net_buf *buf;
 
-	if (!BT_FEAT_LE_PAST_SEND(bt_dev.le.features)) {
-		return -EOPNOTSUPP;
+
+	if (!BT_FEAT_LE_EXT_PER_ADV(bt_dev.le.features)) {
+		return -ENOTSUP;
+	} else if (!BT_FEAT_LE_PAST_SEND(bt_dev.le.features)) {
+		return -ENOTSUP;
 	}
 
 	buf = bt_hci_cmd_create(BT_HCI_OP_LE_PER_ADV_SYNC_TRANSFER,
@@ -1433,8 +1476,10 @@ int bt_le_per_adv_sync_transfer_subscribe(
 {
 	uint8_t cte_type = 0;
 
-	if (!BT_FEAT_LE_PAST_RECV(bt_dev.le.features)) {
-		return -EOPNOTSUPP;
+	if (!BT_FEAT_LE_EXT_PER_ADV(bt_dev.le.features)) {
+		return -ENOTSUP;
+	} else if (!BT_FEAT_LE_PAST_RECV(bt_dev.le.features)) {
+		return -ENOTSUP;
 	}
 
 	if (!valid_past_param(param)) {
@@ -1469,8 +1514,10 @@ int bt_le_per_adv_sync_transfer_subscribe(
 
 int bt_le_per_adv_sync_transfer_unsubscribe(const struct bt_conn *conn)
 {
-	if (!BT_FEAT_LE_PAST_RECV(bt_dev.le.features)) {
-		return -EOPNOTSUPP;
+	if (!BT_FEAT_LE_EXT_PER_ADV(bt_dev.le.features)) {
+		return -ENOTSUP;
+	} else if (!BT_FEAT_LE_PAST_RECV(bt_dev.le.features)) {
+		return -ENOTSUP;
 	}
 
 	if (conn) {

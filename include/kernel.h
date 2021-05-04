@@ -528,7 +528,7 @@ __syscall void k_wakeup(k_tid_t thread);
  * @return ID of current thread.
  *
  */
-__syscall k_tid_t k_current_get(void);
+__syscall k_tid_t k_current_get(void) __attribute_const__;
 
 /**
  * @brief Abort a thread.
@@ -902,7 +902,7 @@ extern void k_sched_time_slice_set(int32_t slice, int prio);
  * This routine allows the caller to customize its actions, depending on
  * whether it is a thread or an ISR.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @return false if invoked by a thread.
  * @return true if invoked by an ISR.
@@ -920,7 +920,7 @@ extern bool k_is_in_isr(void);
  * - The thread's priority is in the preemptible range.
  * - The thread has not locked the scheduler.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @return 0 if invoked by an ISR or by a cooperative thread.
  * @return Non-zero if invoked by a preemptible thread.
@@ -933,7 +933,7 @@ __syscall int k_is_preempt_thread(void);
  * This routine allows the caller to customize its actions, depending on
  * whether it being invoked before the kernel is fully active.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @return true if invoked before post-kernel initialization
  * @return false if invoked during/after post-kernel initialization
@@ -1016,29 +1016,29 @@ __syscall void *k_thread_custom_data_get(void);
  * Set the name of the thread to be used when @option{CONFIG_THREAD_MONITOR}
  * is enabled for tracing and debugging.
  *
- * @param thread_id Thread to set name, or NULL to set the current thread
- * @param value Name string
+ * @param thread Thread to set name, or NULL to set the current thread
+ * @param str Name string
  * @retval 0 on success
  * @retval -EFAULT Memory access error with supplied string
  * @retval -ENOSYS Thread name configuration option not enabled
  * @retval -EINVAL Thread name too long
  */
-__syscall int k_thread_name_set(k_tid_t thread_id, const char *value);
+__syscall int k_thread_name_set(k_tid_t thread, const char *str);
 
 /**
  * @brief Get thread name
  *
  * Get the name of a thread
  *
- * @param thread_id Thread ID
+ * @param thread Thread ID
  * @retval Thread name, or NULL if configuration not enabled
  */
-const char *k_thread_name_get(k_tid_t thread_id);
+const char *k_thread_name_get(k_tid_t thread);
 
 /**
  * @brief Copy the thread name into a supplied buffer
  *
- * @param thread_id Thread to obtain name information
+ * @param thread Thread to obtain name information
  * @param buf Destination buffer
  * @param size Destination buffer size
  * @retval -ENOSPC Destination buffer too small
@@ -1046,7 +1046,7 @@ const char *k_thread_name_get(k_tid_t thread_id);
  * @retval -ENOSYS Thread name feature not enabled
  * @retval 0 Success
  */
-__syscall int k_thread_name_copy(k_tid_t thread_id, char *buf,
+__syscall int k_thread_name_copy(k_tid_t thread, char *buf,
 				 size_t size);
 
 /**
@@ -1414,8 +1414,10 @@ __syscall void k_timer_start(struct k_timer *timer,
  * Attempting to stop a timer that is not running is permitted, but has no
  * effect on the timer.
  *
- * @note Can be called by ISRs.  The stop handler has to be callable from ISRs
- * if @a k_timer_stop is to be called from ISRs.
+ * @note The stop handler has to be callable from ISRs if @a k_timer_stop is to
+ * be called from ISRs.
+ *
+ * @funcprops \isr_ok
  *
  * @param timer     Address of timer.
  *
@@ -1701,7 +1703,7 @@ __syscall void k_queue_init(struct k_queue *queue);
  * -EINTR and K_POLL_STATE_CANCELLED state (and per above, subsequent
  * k_queue_get() will return NULL).
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  *
@@ -1716,7 +1718,7 @@ __syscall void k_queue_cancel_wait(struct k_queue *queue);
  * aligned on a word boundary, and the first word of the item is reserved
  * for the kernel's use.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param data Address of the data item.
@@ -1733,7 +1735,7 @@ extern void k_queue_append(struct k_queue *queue, void *data);
  * the calling thread's resource pool, which is automatically freed when the
  * item is removed. The data itself is not copied.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param data Address of the data item.
@@ -1750,7 +1752,7 @@ __syscall int32_t k_queue_alloc_append(struct k_queue *queue, void *data);
  * aligned on a word boundary, and the first word of the item is reserved
  * for the kernel's use.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param data Address of the data item.
@@ -1767,7 +1769,7 @@ extern void k_queue_prepend(struct k_queue *queue, void *data);
  * the calling thread's resource pool, which is automatically freed when the
  * item is removed. The data itself is not copied.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param data Address of the data item.
@@ -1784,7 +1786,7 @@ __syscall int32_t k_queue_alloc_prepend(struct k_queue *queue, void *data);
  * data item must be aligned on a word boundary, and the first word of
  * the item is reserved for the kernel's use.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param prev Address of the previous data item.
@@ -1802,7 +1804,7 @@ extern void k_queue_insert(struct k_queue *queue, void *prev, void *data);
  * in each data item pointing to the next data item; the list must be
  * NULL-terminated.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param head Pointer to first node in singly-linked list.
@@ -1821,7 +1823,7 @@ extern int k_queue_append_list(struct k_queue *queue, void *head, void *tail);
  * The data items must be in a singly-linked list implemented using a
  * sys_slist_t object. Upon completion, the original list is empty.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param list Pointer to sys_slist_t object.
@@ -1837,7 +1839,9 @@ extern int k_queue_merge_slist(struct k_queue *queue, sys_slist_t *list);
  * This routine removes first data item from @a queue. The first word of the
  * data item is reserved for the kernel's use.
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ *
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param timeout Non-negative waiting period to obtain a data item
@@ -1856,7 +1860,9 @@ __syscall void *k_queue_get(struct k_queue *queue, k_timeout_t timeout);
  * data item is reserved for the kernel's use. Removing elements from k_queue
  * rely on sys_slist_find_and_remove which is not a constant time operation.
  *
- * @note Can be called by ISRs
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ *
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param data Address of the data item.
@@ -1875,7 +1881,7 @@ static inline bool k_queue_remove(struct k_queue *queue, void *data)
  * item is reserved for the kernel's use. Appending elements to k_queue
  * relies on sys_slist_is_node_in_list which is not a constant time operation.
  *
- * @note Can be called by ISRs
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  * @param data Address of the data item.
@@ -1902,7 +1908,7 @@ static inline bool k_queue_unique_append(struct k_queue *queue, void *data)
  * Note that the data might be already gone by the time this function returns
  * if other threads are also trying to read from the queue.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue Address of the queue.
  *
@@ -2082,7 +2088,7 @@ struct k_fifo {
  * return from k_fifo_get() call with NULL value (as if timeout
  * expired).
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param fifo Address of the FIFO queue.
  *
@@ -2098,7 +2104,7 @@ struct k_fifo {
  * aligned on a word boundary, and the first word of the item is reserved
  * for the kernel's use.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param fifo Address of the FIFO.
  * @param data Address of the data item.
@@ -2116,7 +2122,7 @@ struct k_fifo {
  * the calling thread's resource pool, which is automatically freed when the
  * item is removed. The data itself is not copied.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param fifo Address of the FIFO.
  * @param data Address of the data item.
@@ -2135,7 +2141,7 @@ struct k_fifo {
  * each data item pointing to the next data item; the list must be
  * NULL-terminated.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param fifo Address of the FIFO queue.
  * @param head Pointer to first node in singly-linked list.
@@ -2154,7 +2160,7 @@ struct k_fifo {
  * sys_slist_t object. Upon completion, the sys_slist_t object is invalid
  * and must be re-initialized via sys_slist_init().
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param fifo Address of the FIFO queue.
  * @param list Pointer to sys_slist_t object.
@@ -2170,7 +2176,9 @@ struct k_fifo {
  * This routine removes a data item from @a fifo in a "first in, first out"
  * manner. The first word of the data item is reserved for the kernel's use.
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ *
+ * @funcprops \isr_ok
  *
  * @param fifo Address of the FIFO queue.
  * @param timeout Waiting period to obtain a data item,
@@ -2188,7 +2196,7 @@ struct k_fifo {
  * Note that the data might be already gone by the time this function returns
  * if other threads is also trying to read from the FIFO.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param fifo Address of the FIFO queue.
  *
@@ -2285,7 +2293,7 @@ struct k_lifo {
  * aligned on a word boundary, and the first word of the item is
  * reserved for the kernel's use.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param lifo Address of the LIFO queue.
  * @param data Address of the data item.
@@ -2303,7 +2311,7 @@ struct k_lifo {
  * the calling thread's resource pool, which is automatically freed when the
  * item is removed. The data itself is not copied.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param lifo Address of the LIFO.
  * @param data Address of the data item.
@@ -2320,7 +2328,9 @@ struct k_lifo {
  * This routine removes a data item from @a LIFO in a "last in, first out"
  * manner. The first word of the data item is reserved for the kernel's use.
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ *
+ * @funcprops \isr_ok
  *
  * @param lifo Address of the LIFO queue.
  * @param timeout Waiting period to obtain a data item,
@@ -2433,7 +2443,7 @@ int k_stack_cleanup(struct k_stack *stack);
  *
  * This routine adds a stack_data_t value @a data to @a stack.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param stack Address of the stack.
  * @param data Value to push onto the stack.
@@ -2449,7 +2459,9 @@ __syscall int k_stack_push(struct k_stack *stack, stack_data_t data);
  * This routine removes a stack_data_t value from @a stack in a "last in,
  * first out" manner and stores the value in @a data.
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ *
+ * @funcprops \isr_ok
  *
  * @param stack Address of the stack.
  * @param data Address of area to hold the value popped from the stack.
@@ -2761,7 +2773,9 @@ __syscall int k_sem_init(struct k_sem *sem, unsigned int initial_count,
  *
  * This routine takes @a sem.
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ *
+ * @funcprops \isr_ok
  *
  * @param sem Address of the semaphore.
  * @param timeout Waiting period to take the semaphore,
@@ -2780,7 +2794,7 @@ __syscall int k_sem_take(struct k_sem *sem, k_timeout_t timeout);
  * This routine gives @a sem, unless the semaphore is already at its maximum
  * permitted count.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param sem Address of the semaphore.
  *
@@ -2852,7 +2866,8 @@ struct k_work_sync;
  */
 
 /**
- * @addtogroup thread_apis
+ * @defgroup workqueue_apis Work Queue APIs
+ * @ingroup kernel_apis
  * @{
  */
 
@@ -2871,7 +2886,7 @@ typedef void (*k_work_handler_t)(struct k_work *work);
  * re-invoked to change the associated handler, but this must be done when the
  * work item is idle.
  *
- * @note Safe to invoke from ISRs.
+ * @funcprops \isr_ok
  *
  * @param work the work structure to be initialized.
  *
@@ -2884,10 +2899,10 @@ void k_work_init(struct k_work *work,
  *
  * A zero return value indicates the work item appears to be idle.
  *
- * @note Safe to invoke from ISRs.
- *
  * @note This is a live snapshot of state, which may change before the result
  * is checked.  Use locks where appropriate.
+ *
+ * @funcprops \isr_ok
  *
  * @param work pointer to the work item.
  *
@@ -2900,10 +2915,10 @@ int k_work_busy_get(const struct k_work *work);
  *
  * Wrapper to determine whether a work item is in a non-idle dstate.
  *
- * @note Safe to invoke from ISRs.
- *
  * @note This is a live snapshot of state, which may change before the result
  * is checked.  Use locks where appropriate.
+ *
+ * @funcprops \isr_ok
  *
  * @param work pointer to the work item.
  *
@@ -2913,10 +2928,10 @@ static inline bool k_work_is_pending(const struct k_work *work);
 
 /** @brief Submit a work item to a queue.
  *
- * @note Safe to invoke from ISRs.
- *
  * @param queue pointer to the work queue on which the item should run.  If
  * NULL the queue from the most recent submission will be used.
+ *
+ * @funcprops \isr_ok
  *
  * @param work pointer to the work item.
  *
@@ -2935,7 +2950,7 @@ int k_work_submit_to_queue(struct k_work_q *queue,
 
 /** @brief Submit a work item to the system queue.
  *
- * @note Safe to invoke from ISRs.
+ * @funcprops \isr_ok
  *
  * @param work pointer to the work item.
  *
@@ -2985,7 +3000,7 @@ bool k_work_flush(struct k_work *work,
  *
  * See also k_work_cancel_sync().
  *
- * @note Safe to invoke from ISRs.
+ * @funcprops \isr_ok
  *
  * @param work pointer to the work item.
  *
@@ -3019,8 +3034,9 @@ int k_work_cancel(struct k_work *work);
  * one completes.  On architectures with CONFIG_KERNEL_COHERENCE the object
  * must be allocated in coherent memory.
  *
- * @retval true if work was not idle (call had to wait for cancellation to
- * complete);
+ * @retval true if work was pending (call had to wait for cancellation of a
+ * running handler to complete, or scheduled or submitted operations were
+ * cancelled);
  * @retval false otherwise
  */
 bool k_work_cancel_sync(struct k_work *work, struct k_work_sync *sync);
@@ -3088,7 +3104,7 @@ int k_work_queue_drain(struct k_work_q *queue, bool plug);
  * is invoked with the @p plug option enabled.  If this is invoked before the
  * drain completes new items may be submitted as soon as the drain completes.
  *
- * @note Safe to invoke from ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue pointer to the queue structure.
  *
@@ -3104,7 +3120,7 @@ int k_work_queue_unplug(struct k_work_q *queue);
  * can be re-invoked to change the associated handler, but this must be done
  * when the work item is idle.
  *
- * @note Safe to invoke from ISRs.
+ * @funcprops \isr_ok
  *
  * @param dwork the delayable work structure to be initialized.
  *
@@ -3129,7 +3145,7 @@ k_work_delayable_from_work(struct k_work *work);
 
 /** @brief Busy state flags from the delayable work item.
  *
- * @note Safe to invoke from ISRs.
+ * @funcprops \isr_ok
  *
  * @note This is a live snapshot of state, which may change before the result
  * can be inspected.  Use locks where appropriate.
@@ -3146,10 +3162,10 @@ int k_work_delayable_busy_get(const struct k_work_delayable *dwork);
  *
  * Wrapper to determine whether a delayed work item is in a non-idle state.
  *
- * @note Safe to invoke from ISRs.
- *
  * @note This is a live snapshot of state, which may change before the result
  * can be inspected.  Use locks where appropriate.
+ *
+ * @funcprops \isr_ok
  *
  * @param dwork pointer to the delayable work item.
  *
@@ -3162,10 +3178,10 @@ static inline bool k_work_delayable_is_pending(
 /** @brief Get the absolute tick count at which a scheduled delayable work
  * will be submitted.
  *
- * @note Safe to invoke from ISRs.
- *
  * @note This is a live snapshot of state, which may change before the result
  * can be inspected.  Use locks where appropriate.
+ *
+ * @funcprops \isr_ok
  *
  * @param dwork pointer to the delayable work item.
  *
@@ -3178,10 +3194,10 @@ static inline k_ticks_t k_work_delayable_expires_get(
 /** @brief Get the number of ticks until a scheduled delayable work will be
  * submitted.
  *
- * @note Safe to invoke from ISRs.
- *
  * @note This is a live snapshot of state, which may change before the result
  * can be inspected.  Use locks where appropriate.
+ *
+ * @funcprops \isr_ok
  *
  * @param dwork pointer to the delayable work item.
  *
@@ -3196,7 +3212,7 @@ static inline k_ticks_t k_work_delayable_remaining_get(
  * Unlike k_work_reschedule_for_queue() this is a no-op if the work item is
  * already scheduled or submitted, even if @p delay is @c K_NO_WAIT.
  *
- * @note Safe to invoke from ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue the queue on which the work item should be submitted after the
  * delay.
@@ -3240,7 +3256,7 @@ static inline int k_work_schedule(struct k_work_delayable *dwork,
  * (e.g. is submitted or running).  This function does not affect ("unsubmit")
  * a work item that has been submitted to a queue.
  *
- * @note Safe to invoke from ISRs.
+ * @funcprops \isr_ok
  *
  * @param queue the queue on which the work item should be submitted after the
  * delay.
@@ -3317,14 +3333,14 @@ bool k_work_flush_delayable(struct k_work_delayable *dwork,
  * scheduled or submitted it is canceled.  This function does not wait for the
  * cancellation to complete.
  *
- * @note Safe to invoke from ISRs.
- *
  * @note The work may still be running when this returns.  Use
  * k_work_flush_delayable() or k_work_cancel_delayable_sync() to ensure it is
  * not running.
  *
  * @note Canceling delayable work does not prevent rescheduling it.  It does
  * prevent submitting it until the cancellation completes.
+ *
+ * @funcprops \isr_ok
  *
  * @param dwork pointer to the delayable work item.
  *
@@ -3356,8 +3372,9 @@ int k_work_cancel_delayable(struct k_work_delayable *dwork);
  * one completes.  On architectures with CONFIG_KERNEL_COHERENCE the object
  * must be allocated in coherent memory.
  *
- * @retval true if work was not idle (call had to wait for cancellation to
- * complete);
+ * @retval true if work was not idle (call had to wait for cancellation of a
+ * running handler to complete, or scheduled or submitted operations were
+ * cancelled);
  * @retval false otherwise
  */
 bool k_work_cancel_delayable_sync(struct k_work_delayable *dwork,
@@ -3768,7 +3785,7 @@ static inline k_ticks_t k_delayed_work_remaining_ticks(
 struct k_work_user;
 
 /**
- * @addtogroup thread_apis
+ * @addtogroup workqueue_apis
  * @{
  */
 
@@ -3854,7 +3871,7 @@ static inline void k_work_user_init(struct k_work_user *work,
  *       work will still be pending when this information is used. It is up to
  *       the caller to make sure that this information is used in a safe manner.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param work Address of work item.
  *
@@ -3874,7 +3891,7 @@ static inline bool k_work_user_is_pending(struct k_work_user *work)
  * thread must have memory access to the k_work item being submitted. The caller
  * must have permission granted on the work_q parameter's queue object.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param work_q Address of workqueue.
  * @param work Address of work item.
@@ -3952,7 +3969,7 @@ struct k_work_poll {
  */
 
 /**
- * @addtogroup thread_apis
+ * @addtogroup workqueue_apis
  * @{
  */
 
@@ -4013,7 +4030,7 @@ extern void k_work_poll_init(struct k_work_poll *work,
  * to race conditions with the pre-existing triggered work item and work queue,
  * so care must be taken to synchronize such resubmissions externally.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @warning
  * Provided array of events as well as a triggered work item must be placed
@@ -4053,7 +4070,7 @@ extern int k_work_poll_submit_to_queue(struct k_work_q *work_q,
  * to race conditions with the pre-existing triggered work item and work queue,
  * so care must be taken to synchronize such resubmissions externally.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @warning
  * Provided array of events as well as a triggered work item must not be
@@ -4085,7 +4102,7 @@ static inline int k_work_poll_submit(struct k_work_poll *work,
  * A triggered work item can only be canceled if no event triggered work
  * submission.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param work Address of delayed work item.
  *
@@ -4125,6 +4142,8 @@ struct k_msgq {
 	/** Number of used messages */
 	uint32_t used_msgs;
 
+	_POLL_EVENT;
+
 	_OBJECT_TRACING_NEXT_PTR(k_msgq)
 	_OBJECT_TRACING_LINKED_FLAG
 
@@ -4146,6 +4165,7 @@ struct k_msgq {
 	.read_ptr = q_buffer, \
 	.write_ptr = q_buffer, \
 	.used_msgs = 0, \
+	_POLL_EVENT_OBJ_INIT(obj) \
 	_OBJECT_TRACING_INIT \
 	}
 
@@ -4207,14 +4227,14 @@ struct k_msgq_attrs {
  * that each message is similarly aligned to this boundary, @a q_msg_size
  * must also be a multiple of N.
  *
- * @param q Address of the message queue.
+ * @param msgq Address of the message queue.
  * @param buffer Pointer to ring buffer that holds queued messages.
  * @param msg_size Message size (in bytes).
  * @param max_msgs Maximum number of messages that can be queued.
  *
  * @return N/A
  */
-void k_msgq_init(struct k_msgq *q, char *buffer, size_t msg_size,
+void k_msgq_init(struct k_msgq *msgq, char *buffer, size_t msg_size,
 		 uint32_t max_msgs);
 
 /**
@@ -4256,10 +4276,11 @@ int k_msgq_cleanup(struct k_msgq *msgq);
  *
  * This routine sends a message to message queue @a q.
  *
- * @note Can be called by ISRs.
  * @note The message content is copied from @a data into @a msgq and the @a data
  * pointer is not retained, so the message content will not be modified
  * by this function.
+ *
+ * @funcprops \isr_ok
  *
  * @param msgq Address of the message queue.
  * @param data Pointer to the message.
@@ -4279,7 +4300,9 @@ __syscall int k_msgq_put(struct k_msgq *msgq, const void *data, k_timeout_t time
  * This routine receives a message from message queue @a q in a "first in,
  * first out" manner.
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ *
+ * @funcprops \isr_ok
  *
  * @param msgq Address of the message queue.
  * @param data Address of area to hold the received message.
@@ -4299,7 +4322,7 @@ __syscall int k_msgq_get(struct k_msgq *msgq, void *data, k_timeout_t timeout);
  * This routine reads a message from message queue @a q in a "first in,
  * first out" manner and leaves the message in the queue.
  *
- * @note Can be called by ISRs.
+ * @funcprops \isr_ok
  *
  * @param msgq Address of the message queue.
  * @param data Address of area to hold the message read from the queue.
@@ -4724,6 +4747,7 @@ __syscall size_t k_pipe_write_avail(struct k_pipe *pipe);
 
 struct k_mem_slab {
 	_wait_q_t wait_q;
+	struct k_spinlock lock;
 	uint32_t num_blocks;
 	size_t block_size;
 	char *buffer;
@@ -4740,6 +4764,7 @@ struct k_mem_slab {
 #define Z_MEM_SLAB_INITIALIZER(obj, slab_buffer, slab_block_size, \
 			       slab_num_blocks) \
 	{ \
+	.lock = {}, \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
 	.num_blocks = slab_num_blocks, \
 	.block_size = slab_block_size, \
@@ -4815,7 +4840,10 @@ extern int k_mem_slab_init(struct k_mem_slab *slab, void *buffer,
  *
  * This routine allocates a memory block from a memory slab.
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ * @note When CONFIG_MULTITHREADING=n any @a timeout is treated as K_NO_WAIT.
+ *
+ * @funcprops \isr_ok
  *
  * @param slab Address of the memory slab.
  * @param mem Pointer to block address area.
@@ -4933,7 +4961,10 @@ void k_heap_init(struct k_heap *h, void *mem, size_t bytes);
  * bytes.  The resulting memory can be returned to the heap using
  * k_heap_free().
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ * @note When CONFIG_MULTITHREADING=n any @a timeout is treated as K_NO_WAIT.
+ *
+ * @funcprops \isr_ok
  *
  * @param h Heap from which to allocate
  * @param align Alignment in bytes, must be a power of two
@@ -4954,7 +4985,10 @@ void *k_heap_aligned_alloc(struct k_heap *h, size_t align, size_t bytes,
  * freed.  If the allocation cannot be performed by the expiration of
  * the timeout, NULL will be returned.
  *
- * @note Can be called by ISRs, but @a timeout must be set to K_NO_WAIT.
+ * @note @a timeout must be set to K_NO_WAIT if called from ISR.
+ * @note When CONFIG_MULTITHREADING=n any @a timeout is treated as K_NO_WAIT.
+ *
+ * @funcprops \isr_ok
  *
  * @param h Heap from which to allocate
  * @param bytes Desired size of block to allocate
@@ -5095,6 +5129,9 @@ enum _poll_types_bits {
 	/* queue/FIFO/LIFO data availability */
 	_POLL_TYPE_DATA_AVAILABLE,
 
+	/* msgq data availability */
+	_POLL_TYPE_MSGQ_DATA_AVAILABLE,
+
 	_POLL_NUM_TYPES
 };
 
@@ -5116,6 +5153,9 @@ enum _poll_states_bits {
 
 	/* queue/FIFO/LIFO wait was cancelled */
 	_POLL_STATE_CANCELLED,
+
+	/* data is available to read on a message queue */
+	_POLL_STATE_MSGQ_DATA_AVAILABLE,
 
 	_POLL_NUM_STATES
 };
@@ -5147,6 +5187,7 @@ enum _poll_states_bits {
 #define K_POLL_TYPE_SEM_AVAILABLE Z_POLL_TYPE_BIT(_POLL_TYPE_SEM_AVAILABLE)
 #define K_POLL_TYPE_DATA_AVAILABLE Z_POLL_TYPE_BIT(_POLL_TYPE_DATA_AVAILABLE)
 #define K_POLL_TYPE_FIFO_DATA_AVAILABLE K_POLL_TYPE_DATA_AVAILABLE
+#define K_POLL_TYPE_MSGQ_DATA_AVAILABLE Z_POLL_TYPE_BIT(_POLL_TYPE_MSGQ_DATA_AVAILABLE)
 
 /* public - polling modes */
 enum k_poll_modes {
@@ -5162,6 +5203,7 @@ enum k_poll_modes {
 #define K_POLL_STATE_SEM_AVAILABLE Z_POLL_STATE_BIT(_POLL_STATE_SEM_AVAILABLE)
 #define K_POLL_STATE_DATA_AVAILABLE Z_POLL_STATE_BIT(_POLL_STATE_DATA_AVAILABLE)
 #define K_POLL_STATE_FIFO_DATA_AVAILABLE K_POLL_STATE_DATA_AVAILABLE
+#define K_POLL_STATE_MSGQ_DATA_AVAILABLE Z_POLL_STATE_BIT(_POLL_STATE_MSGQ_DATA_AVAILABLE)
 #define K_POLL_STATE_CANCELLED Z_POLL_STATE_BIT(_POLL_STATE_CANCELLED)
 
 /* public - poll signal object */
@@ -5218,6 +5260,7 @@ struct k_poll_event {
 		struct k_sem *sem;
 		struct k_fifo *fifo;
 		struct k_queue *queue;
+		struct k_msgq *msgq;
 	};
 };
 
@@ -5228,7 +5271,9 @@ struct k_poll_event {
 	.state = K_POLL_STATE_NOT_READY, \
 	.mode = _event_mode, \
 	.unused = 0, \
-	.obj = _event_obj, \
+	{ \
+		.obj = _event_obj, \
+	}, \
 	}
 
 #define K_POLL_EVENT_STATIC_INITIALIZER(_event_type, _event_mode, _event_obj, \
@@ -5239,7 +5284,9 @@ struct k_poll_event {
 	.state = K_POLL_STATE_NOT_READY, \
 	.mode = _event_mode, \
 	.unused = 0, \
-	.obj = _event_obj, \
+	{ \
+		.obj = _event_obj, \
+	}, \
 	}
 
 /**
@@ -5313,36 +5360,36 @@ __syscall int k_poll(struct k_poll_event *events, int num_events,
  *
  * Ready a poll signal object to be signaled via k_poll_signal_raise().
  *
- * @param signal A poll signal.
+ * @param sig A poll signal.
  *
  * @return N/A
  */
 
-__syscall void k_poll_signal_init(struct k_poll_signal *signal);
+__syscall void k_poll_signal_init(struct k_poll_signal *sig);
 
 /*
  * @brief Reset a poll signal object's state to unsignaled.
  *
- * @param signal A poll signal object
+ * @param sig A poll signal object
  */
-__syscall void k_poll_signal_reset(struct k_poll_signal *signal);
+__syscall void k_poll_signal_reset(struct k_poll_signal *sig);
 
-static inline void z_impl_k_poll_signal_reset(struct k_poll_signal *signal)
+static inline void z_impl_k_poll_signal_reset(struct k_poll_signal *sig)
 {
-	signal->signaled = 0U;
+	sig->signaled = 0U;
 }
 
 /**
  * @brief Fetch the signaled state and result value of a poll signal
  *
- * @param signal A poll signal object
+ * @param sig A poll signal object
  * @param signaled An integer buffer which will be written nonzero if the
  *		   object was signaled
  * @param result An integer destination buffer which will be written with the
  *		   result value if the object was signaled, or an undefined
  *		   value if it was not.
  */
-__syscall void k_poll_signal_check(struct k_poll_signal *signal,
+__syscall void k_poll_signal_check(struct k_poll_signal *sig,
 				   unsigned int *signaled, int *result);
 
 /**
@@ -5362,14 +5409,14 @@ __syscall void k_poll_signal_check(struct k_poll_signal *signal,
  * this function returns an error indicating that an expiring poll was
  * not notified.  The next k_poll() will detect the missed raise.
  *
- * @param signal A poll signal.
+ * @param sig A poll signal.
  * @param result The value to store in the result field of the signal.
  *
  * @retval 0 The signal was delivered successfully.
  * @retval -EAGAIN The polling thread's timeout is in the process of expiring.
  */
 
-__syscall int k_poll_signal_raise(struct k_poll_signal *signal, int result);
+__syscall int k_poll_signal_raise(struct k_poll_signal *sig, int result);
 
 /**
  * @internal
@@ -5506,6 +5553,12 @@ extern void z_init_static_threads(void);
  * @internal
  */
 extern bool z_is_thread_essential(void);
+
+#ifdef CONFIG_SMP
+void z_smp_thread_init(void *arg, struct k_thread *thread);
+void z_smp_thread_swap(void);
+#endif
+
 /**
  * @internal
  */
@@ -5538,11 +5591,51 @@ __syscall void k_str_out(char *c, size_t n);
  *
  * @param thread ID of thread.
  *
- * @retval 0       On success.
- * @retval -ENOSYS If the floating point disabling is not implemented.
- *         -EINVAL If the floating point disabling could not be performed.
+ * @retval 0        On success.
+ * @retval -ENOTSUP If the floating point disabling is not implemented.
+ *         -EINVAL  If the floating point disabling could not be performed.
  */
 __syscall int k_float_disable(struct k_thread *thread);
+
+/**
+ * @brief Enable preservation of floating point context information.
+ *
+ * This routine informs the kernel that the specified thread
+ * will use the floating point registers.
+
+ * Invoking this routine initializes the thread's floating point context info
+ * to that of an FPU that has been reset. The next time the thread is scheduled
+ * by z_swap() it will either inherit an FPU that is guaranteed to be in a
+ * "sane" state (if the most recent user of the FPU was cooperatively swapped
+ * out) or the thread's own floating point context will be loaded (if the most
+ * recent user of the FPU was preempted, or if this thread is the first user
+ * of the FPU). Thereafter, the kernel will protect the thread's FP context
+ * so that it is not altered during a preemptive context switch.
+ *
+ * The @a options parameter indicates which floating point register sets will
+ * be used by the specified thread.
+ *
+ * For x86 options:
+ *
+ * - K_FP_REGS  indicates x87 FPU and MMX registers only
+ * - K_SSE_REGS indicates SSE registers (and also x87 FPU and MMX registers)
+ *
+ * @warning
+ * Some architectures apply restrictions on how the enabling of floating
+ * point preservation may be requested, see arch_float_enable.
+ *
+ * @warning
+ * This routine should only be used to enable floating point support for
+ * a thread that currently has such support enabled.
+ *
+ * @param thread  ID of thread.
+ * @param options architecture dependent options
+ *
+ * @retval 0        On success.
+ * @retval -ENOTSUP If the floating point enabling is not implemented.
+ *         -EINVAL  If the floating point enabling could not be performed.
+ */
+__syscall int k_float_enable(struct k_thread *thread, unsigned int options);
 
 #ifdef CONFIG_THREAD_RUNTIME_STATS
 

@@ -65,6 +65,8 @@ features:
 +-----------+------------+-------------------------------------+
 | SYSTICK   | on-chip    | systick                             |
 +-----------+------------+-------------------------------------+
+| OS_TIMER  | on-chip    | os timer                            |
++-----------+------------+-------------------------------------+
 | IOCON     | on-chip    | pinmux                              |
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
@@ -74,6 +76,8 @@ features:
 | I2C       | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| I2S       | on-chip    | i2s                                 |
 +-----------+------------+-------------------------------------+
 | CLOCK     | on-chip    | clock_control                       |
 +-----------+------------+-------------------------------------+
@@ -115,13 +119,20 @@ functionality of a pin.
 +---------+-----------------+----------------------------+
 | PIO1_6  | SPI             | SPI SSEL                   |
 +---------+-----------------+----------------------------+
+| PIO0_23 | I2S             | I2S DATAOUT                |
++---------+-----------------+----------------------------+
+| PIO0_22 | I2S             | I2S TX WS                  |
++---------+-----------------+----------------------------+
+| PIO0_21 | I2S             | I2S TX SCK                 |
++---------+-----------------+----------------------------+
+| PIO0_9  | I2S             | I2S DATAIN                 |
++---------+-----------------+----------------------------+
 
 System Clock
 ============
 
-The MIMXRT685 SoC is configured to use the main system PLL at 250MHz
-as a source for the system clock. Other sources for the system clock
-are provided in the SOC, depending on your system requirements.
+The MIMXRT685 EVK is configured to use the OS Event timer
+as a source for the system clock.
 
 Serial Port
 ===========

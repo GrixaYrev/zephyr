@@ -1017,8 +1017,11 @@ static void smp_br_timeout(struct k_work *work)
 static void smp_br_send(struct bt_smp_br *smp, struct net_buf *buf,
 			bt_conn_tx_cb_t cb)
 {
-	bt_l2cap_send_cb(smp->chan.chan.conn, BT_L2CAP_CID_BR_SMP, buf, cb,
-			 NULL);
+	if (bt_l2cap_send_cb(smp->chan.chan.conn, BT_L2CAP_CID_BR_SMP, buf, cb, NULL)) {
+		net_buf_unref(buf);
+		return;
+	}
+
 	k_delayed_work_submit(&smp->work, SMP_TIMEOUT);
 }
 
@@ -1575,7 +1578,9 @@ static int smp_br_error(struct bt_smp_br *smp, uint8_t reason)
 	 * SMP timer is not restarted for PairingFailed so don't use
 	 * smp_br_send
 	 */
-	bt_l2cap_send(smp->chan.chan.conn, BT_L2CAP_CID_SMP, buf);
+	if (bt_l2cap_send(smp->chan.chan.conn, BT_L2CAP_CID_SMP, buf)) {
+		net_buf_unref(buf);
+	}
 
 	return 0;
 }
@@ -1893,7 +1898,11 @@ static void smp_timeout(struct k_work *work)
 static void smp_send(struct bt_smp *smp, struct net_buf *buf,
 		     bt_conn_tx_cb_t cb, void *user_data)
 {
-	bt_l2cap_send_cb(smp->chan.chan.conn, BT_L2CAP_CID_SMP, buf, cb, NULL);
+	if (bt_l2cap_send_cb(smp->chan.chan.conn, BT_L2CAP_CID_SMP, buf, cb, NULL)) {
+		net_buf_unref(buf);
+		return;
+	}
+
 	k_delayed_work_submit(&smp->work, SMP_TIMEOUT);
 }
 
@@ -1918,7 +1927,9 @@ static int smp_error(struct bt_smp *smp, uint8_t reason)
 	rsp->reason = reason;
 
 	/* SMP timer is not restarted for PairingFailed so don't use smp_send */
-	bt_l2cap_send(smp->chan.chan.conn, BT_L2CAP_CID_SMP, buf);
+	if (bt_l2cap_send(smp->chan.chan.conn, BT_L2CAP_CID_SMP, buf)) {
+		net_buf_unref(buf);
+	}
 
 	return 0;
 }
@@ -2411,6 +2422,7 @@ static uint8_t legacy_pairing_req(struct bt_smp *smp)
 	}
 
 	atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
+	atomic_set_bit(smp->allowed_cmds, BT_SMP_KEYPRESS_NOTIFICATION);
 	return send_pairing_rsp(smp);
 }
 #endif /* CONFIG_BT_PERIPHERAL */
@@ -2719,9 +2731,16 @@ static uint8_t get_auth(struct bt_conn *conn, uint8_t auth)
 
 static uint8_t remote_sec_level_reachable(struct bt_smp *smp)
 {
-	struct bt_conn *conn = smp->chan.chan.conn;
+	bt_security_t sec = smp->chan.chan.conn->required_sec_level;
 
-	switch (conn->required_sec_level) {
+	if (IS_ENABLED(CONFIG_BT_SMP_SC_ONLY)) {
+		sec = BT_SECURITY_L4;
+	}
+	if (IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)) {
+		sec = BT_SECURITY_L3;
+	}
+
+	switch (sec) {
 	case BT_SECURITY_L1:
 	case BT_SECURITY_L2:
 		return 0;
@@ -2867,6 +2886,7 @@ static int smp_send_security_req(struct bt_conn *conn)
 	struct bt_smp *smp;
 	struct bt_smp_security_request *req;
 	struct net_buf *req_buf;
+	int err;
 
 	BT_DBG("");
 	smp = smp_chan_get(conn);
@@ -2914,7 +2934,11 @@ static int smp_send_security_req(struct bt_conn *conn)
 	req->auth_req = get_auth(conn, BT_SMP_AUTH_DEFAULT);
 
 	/* SMP timer is not restarted for SecRequest so don't use smp_send */
-	bt_l2cap_send(conn, BT_L2CAP_CID_SMP, req_buf);
+	err = bt_l2cap_send(conn, BT_L2CAP_CID_SMP, req_buf);
+	if (err) {
+		net_buf_unref(req_buf);
+		return err;
+	}
 
 	atomic_set_bit(smp->flags, SMP_FLAG_SEC_REQ);
 	atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_REQ);
@@ -4135,9 +4159,11 @@ static uint8_t smp_public_key_slave(struct bt_smp *smp)
 		}
 
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
+		atomic_set_bit(smp->allowed_cmds, BT_SMP_KEYPRESS_NOTIFICATION);
 		break;
 	case PASSKEY_INPUT:
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_PAIRING_CONFIRM);
+		atomic_set_bit(smp->allowed_cmds, BT_SMP_KEYPRESS_NOTIFICATION);
 		atomic_set_bit(smp->flags, SMP_FLAG_USER);
 		bt_auth->passkey_entry(smp->chan.chan.conn);
 		break;
@@ -4714,13 +4740,13 @@ int bt_smp_sign_verify(struct bt_conn *conn, struct net_buf *buf)
 		BT_ERR("Unable to create signature for %s",
 		       bt_addr_le_str(&conn->le.dst));
 		return -EIO;
-	};
+	}
 
 	if (memcmp(sig, net_buf_tail(buf) - sizeof(sig), sizeof(sig))) {
 		BT_ERR("Unable to verify signature for %s",
 		       bt_addr_le_str(&conn->le.dst));
 		return -EBADMSG;
-	};
+	}
 
 	keys->remote_csrk.cnt++;
 

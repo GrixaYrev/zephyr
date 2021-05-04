@@ -171,8 +171,8 @@ bool sys_heap_validate(struct sys_heap *heap)
 }
 
 struct z_heap_stress_rec {
-	void *(*alloc)(void *arg, size_t bytes);
-	void (*free)(void *arg, void *p);
+	void *(*alloc_fn)(void *arg, size_t bytes);
+	void (*free_fn)(void *arg, void *p);
 	void *arg;
 	size_t total_bytes;
 	struct z_heap_stress_block *blocks;
@@ -207,33 +207,34 @@ static bool rand_alloc_choice(struct z_heap_stress_rec *sr)
 		return true;
 	} else if (sr->blocks_alloced >= sr->nblocks) {
 		return false;
+	} else {
+
+		/* The way this works is to scale the chance of choosing to
+		 * allocate vs. free such that it's even odds when the heap is
+		 * at the target percent, with linear tapering on the low
+		 * slope (i.e. we choose to always allocate with an empty
+		 * heap, allocate 50% of the time when the heap is exactly at
+		 * the target, and always free when above the target).  In
+		 * practice, the operations aren't quite symmetric (you can
+		 * always free, but your allocation might fail), and the units
+		 * aren't matched (we're doing math based on bytes allocated
+		 * and ignoring the overhead) but this is close enough.  And
+		 * yes, the math here is coarse (in units of percent), but
+		 * that's good enough and fits well inside 32 bit quantities.
+		 * (Note precision issue when heap size is above 40MB
+		 * though!).
+		 */
+		__ASSERT(sr->total_bytes < 0xffffffffU / 100, "too big for u32!");
+		uint32_t full_pct = (100 * sr->bytes_alloced) / sr->total_bytes;
+		uint32_t target = sr->target_percent ? sr->target_percent : 1;
+		uint32_t free_chance = 0xffffffffU;
+
+		if (full_pct < sr->target_percent) {
+			free_chance = full_pct * (0x80000000U / target);
+		}
+
+		return rand32() > free_chance;
 	}
-
-	/* The way this works is to scale the chance of choosing to
-	 * allocate vs. free such that it's even odds when the heap is
-	 * at the target percent, with linear tapering on the low
-	 * slope (i.e. we choose to always allocate with an empty
-	 * heap, allocate 50% of the time when the heap is exactly at
-	 * the target, and always free when above the target).  In
-	 * practice, the operations aren't quite symmetric (you can
-	 * always free, but your allocation might fail), and the units
-	 * aren't matched (we're doing math based on bytes allocated
-	 * and ignoring the overhead) but this is close enough.  And
-	 * yes, the math here is coarse (in units of percent), but
-	 * that's good enough and fits well inside 32 bit quantities.
-	 * (Note precision issue when heap size is above 40MB
-	 * though!).
-	 */
-	__ASSERT(sr->total_bytes < 0xffffffffU / 100, "too big for u32!");
-	uint32_t full_pct = (100 * sr->bytes_alloced) / sr->total_bytes;
-	uint32_t target = sr->target_percent ? sr->target_percent : 1;
-	uint32_t free_chance = 0xffffffffU;
-
-	if (full_pct < sr->target_percent) {
-		free_chance = full_pct * (0x80000000U / target);
-	}
-
-	return rand32() > free_chance;
 }
 
 /* Chooses a size of block to allocate, logarithmically favoring
@@ -265,8 +266,8 @@ static size_t rand_free_choice(struct z_heap_stress_rec *sr)
  * scratch array is used to store temporary state and should be sized
  * about half as large as the heap itself. Returns true on success.
  */
-void sys_heap_stress(void *(*alloc)(void *arg, size_t bytes),
-		     void (*free)(void *arg, void *p),
+void sys_heap_stress(void *(*alloc_fn)(void *arg, size_t bytes),
+		     void (*free_fn)(void *arg, void *p),
 		     void *arg, size_t total_bytes,
 		     uint32_t op_count,
 		     void *scratch_mem, size_t scratch_bytes,
@@ -274,8 +275,8 @@ void sys_heap_stress(void *(*alloc)(void *arg, size_t bytes),
 		     struct z_heap_stress_result *result)
 {
 	struct z_heap_stress_rec sr = {
-	       .alloc = alloc,
-	       .free = free,
+	       .alloc_fn = alloc_fn,
+	       .free_fn = free_fn,
 	       .arg = arg,
 	       .total_bytes = total_bytes,
 	       .blocks = scratch_mem,
@@ -288,7 +289,7 @@ void sys_heap_stress(void *(*alloc)(void *arg, size_t bytes),
 	for (uint32_t i = 0; i < op_count; i++) {
 		if (rand_alloc_choice(&sr)) {
 			size_t sz = rand_alloc_size(&sr);
-			void *p = sr.alloc(sr.arg, sz);
+			void *p = sr.alloc_fn(sr.arg, sz);
 
 			result->total_allocs++;
 			if (p != NULL) {
@@ -307,7 +308,7 @@ void sys_heap_stress(void *(*alloc)(void *arg, size_t bytes),
 			sr.blocks[b] = sr.blocks[sr.blocks_alloced - 1];
 			sr.blocks_alloced--;
 			sr.bytes_alloced -= sz;
-			sr.free(sr.arg, p);
+			sr.free_fn(sr.arg, p);
 		}
 		result->accumulated_in_use_bytes += sr.bytes_alloced;
 	}
@@ -352,12 +353,15 @@ void heap_print_info(struct z_heap *h, bool dump_chunks)
 	}
 	free_bytes = allocated_bytes = 0;
 	for (chunkid_t c = 0; ; c = right_chunk(h, c)) {
-		if (c == 0 || c == h->end_chunk) {
-			/* those are always allocated for internal purposes */
-		} else if (chunk_used(h, c)) {
-			allocated_bytes += chunksz_to_bytes(h, chunk_size(h, c));
-		} else if (!solo_free_header(h, c)) {
-			free_bytes += chunksz_to_bytes(h, chunk_size(h, c));
+		if (chunk_used(h, c)) {
+			if ((c != 0) && (c != h->end_chunk)) {
+				/* 1st and last are always allocated for internal purposes */
+				allocated_bytes += chunksz_to_bytes(h, chunk_size(h, c));
+			}
+		} else {
+			if (!solo_free_header(h, c)) {
+				free_bytes += chunksz_to_bytes(h, chunk_size(h, c));
+			}
 		}
 		if (dump_chunks) {
 			printk("chunk %4d: [%c] size=%-4d left=%-4d right=%d\n",

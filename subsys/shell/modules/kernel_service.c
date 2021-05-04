@@ -9,7 +9,7 @@
 #include <shell/shell.h>
 #include <init.h>
 #include <debug/object_tracing.h>
-#include <power/reboot.h>
+#include <sys/reboot.h>
 #include <debug/stack.h>
 #include <string.h>
 #include <device.h>
@@ -86,7 +86,7 @@ static void shell_tdata_dump(const struct k_thread *cthread, void *user_data)
 
 	if (k_thread_runtime_stats_get(thread, &rt_stats_thread) != 0) {
 		ret++;
-	};
+	}
 
 	if (k_thread_runtime_stats_all_get(&rt_stats_all) != 0) {
 		ret++;

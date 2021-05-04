@@ -113,8 +113,11 @@ static inline int npcx_itim_evt_enable(void)
 	while (!IS_BIT_SET(evt_tmr->ITCTS32, NPCX_ITCTSXX_ITEN)) {
 		if (npcx_itim_get_sys_cyc64() - cyc_start >
 						NPCX_ITIM_EN_TIMEOUT_CYCLES) {
-			LOG_ERR("Timeout: enabling EVT timer!");
-			return -ETIMEDOUT;
+			/* ITEN bit is still unset? */
+			if (!IS_BIT_SET(evt_tmr->ITCTS32, NPCX_ITCTSXX_ITEN)) {
+				LOG_ERR("Timeout: enabling EVT timer!");
+				return -ETIMEDOUT;
+			}
 		}
 	}
 
@@ -134,13 +137,12 @@ static int npcx_itim_start_evt_tmr_by_tick(int32_t ticks)
 	 * Get desired cycles of event timer from the requested ticks which
 	 * round up to next tick boundary.
 	 */
-	if (ticks <= 0) {
-		ticks = 1;
-	}
-
 	if (ticks == K_TICKS_FOREVER) {
 		cyc_evt_timeout = NPCX_ITIM32_MAX_CNT;
 	} else {
+		if (ticks <= 0) {
+			ticks = 1;
+		}
 		cyc_evt_timeout = MIN(EVT_CYCLES_FROM_TICKS(ticks),
 				      NPCX_ITIM32_MAX_CNT);
 	}

@@ -112,7 +112,7 @@ const struct device *z_impl_device_get_binding(const char *name)
 	/* A null string identifies no device.  So does an empty
 	 * string.
 	 */
-	if ((name == NULL) || (*name == 0)) {
+	if ((name == NULL) || (name[0] == '\0')) {
 		return NULL;
 	}
 
@@ -143,7 +143,7 @@ static inline const struct device *z_vrfy_device_get_binding(const char *name)
 
 	if (z_user_string_copy(name_copy, (char *)name, sizeof(name_copy))
 	    != 0) {
-		return 0;
+		return NULL;
 	}
 
 	return z_impl_device_get_binding(name_copy);
@@ -167,7 +167,7 @@ size_t z_device_get_all_static(struct device const **devices)
 
 bool z_device_ready(const struct device *dev)
 {
-	return dev->state->initialized && (dev->state->init_res == 0);
+	return dev->state->initialized && (dev->state->init_res == 0U);
 }
 
 int device_required_foreach(const struct device *dev,
@@ -193,15 +193,6 @@ int device_required_foreach(const struct device *dev,
 }
 
 #ifdef CONFIG_PM_DEVICE
-int device_pm_control_nop(const struct device *unused_device,
-			  uint32_t unused_ctrl_command,
-			  void *unused_context,
-			  device_pm_cb cb,
-			  void *unused_arg)
-{
-	return -ENOTSUP;
-}
-
 int device_any_busy_check(void)
 {
 	const struct device *dev = __device_start;

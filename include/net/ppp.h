@@ -25,7 +25,7 @@ extern "C" {
  */
 
 /** PPP maximum receive unit (MRU) */
-#define PPP_MRU 1500
+#define PPP_MRU CONFIG_NET_PPP_MTU_MRU
 
 /** PPP maximum transfer unit (MTU) */
 #define PPP_MTU PPP_MRU
@@ -223,7 +223,7 @@ struct ppp_my_option_info;
  */
 struct ppp_fsm {
 	/** Timeout timer */
-	struct k_delayed_work timer;
+	struct k_work_delayable timer;
 
 	struct {
 		/** Acknowledge Configuration Information */
@@ -350,6 +350,10 @@ struct lcp_options {
 	uint16_t auth_proto;
 };
 
+#if defined(CONFIG_NET_L2_PPP_OPTION_MRU)
+#define LCP_NUM_MY_OPTIONS	1
+#endif
+
 struct ipcp_options {
 	/** IPv4 address */
 	struct in_addr address;
@@ -378,7 +382,7 @@ struct ppp_context {
 	atomic_t flags;
 
 	/** PPP startup worker. */
-	struct k_delayed_work startup;
+	struct k_work_delayable startup;
 
 	/** Carrier ON/OFF handler worker. This is used to create
 	 * network interface UP/DOWN event when PPP L2 driver
@@ -400,6 +404,9 @@ struct ppp_context {
 
 		/** Magic-Number value */
 		uint32_t magic;
+#if defined(CONFIG_NET_L2_PPP_OPTION_MRU)
+		struct ppp_my_option_data my_options_data[LCP_NUM_MY_OPTIONS];
+#endif
 	} lcp;
 
 #if defined(CONFIG_NET_IPV4)

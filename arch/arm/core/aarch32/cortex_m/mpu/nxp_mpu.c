@@ -455,7 +455,7 @@ static inline int is_in_region(uint32_t r_index, uint32_t start, uint32_t size)
 	r_addr_start = SYSMPU->WORD[r_index][0];
 	r_addr_end = SYSMPU->WORD[r_index][1];
 
-	size = size == 0 ? 0 : size - 1;
+	size = size == 0U ? 0U : size - 1U;
 	if (u32_add_overflow(start, size, &end)) {
 		return 0;
 	}
@@ -526,7 +526,7 @@ static inline int is_user_accessible_region(uint32_t r_index, int write)
 {
 	uint32_t r_ap = SYSMPU->WORD[r_index][2];
 
-	if (write) {
+	if (write != 0) {
 		return (r_ap & MPU_REGION_WRITE) == MPU_REGION_WRITE;
 	}
 
@@ -601,10 +601,8 @@ void arm_core_mpu_configure_dynamic_mpu_regions(
  * This function provides the default configuration mechanism for the Memory
  * Protection Unit (MPU).
  */
-static int nxp_mpu_init(const struct device *arg)
+int z_arm_mpu_init(void)
 {
-	ARG_UNUSED(arg);
-
 	uint32_t r_index;
 
 	if (mpu_config.num_regions > get_num_regions()) {
@@ -640,15 +638,5 @@ static int nxp_mpu_init(const struct device *arg)
 
 	arm_core_mpu_enable();
 
-
 	return 0;
 }
-
-#if defined(CONFIG_LOG)
-/* To have logging the driver needs to be initialized later */
-SYS_INIT(nxp_mpu_init, PRE_KERNEL_2,
-	 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
-#else
-SYS_INIT(nxp_mpu_init, PRE_KERNEL_1,
-	 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
-#endif

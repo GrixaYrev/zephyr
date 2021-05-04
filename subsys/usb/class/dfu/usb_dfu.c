@@ -57,12 +57,12 @@
 #include <logging/log.h>
 LOG_MODULE_REGISTER(usb_dfu);
 
-#define NUMOF_ALTERNATE_SETTINGS	2
-
 #define USB_DFU_MAX_XFER_SIZE		CONFIG_USB_REQUEST_BUFFER_SIZE
 
-#define FIRMWARE_IMAGE_0_LABEL "image-0"
-#define FIRMWARE_IMAGE_1_LABEL "image-1"
+#define FIRMWARE_IMAGE_0_LABEL FLASH_AREA_LABEL_STR(image_0)
+#if FLASH_AREA_LABEL_EXISTS(image_1)
+#define FIRMWARE_IMAGE_1_LABEL FLASH_AREA_LABEL_STR(image_1)
+#endif
 
 #define INTERMITTENT_CHECK_DELAY	50
 
@@ -827,7 +827,7 @@ static bool is_dfu_started(void)
  */
 void wait_for_usb_dfu(k_timeout_t delay)
 {
-	uint64_t end = z_timeout_end_calc(delay);
+	uint64_t end = sys_clock_timeout_end_calc(delay);
 
 	/* Wait for a prescribed duration of time. If DFU hasn't started within
 	 * that time, stop waiting and proceed further.

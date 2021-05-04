@@ -96,23 +96,6 @@ char *net_sprint_addr(sa_family_t af, const void *addr);
 
 #define net_sprint_ipv6_addr(_addr) net_sprint_addr(AF_INET6, _addr)
 
-#if defined(CONFIG_NET_CONTEXT_TIMESTAMP)
-int net_context_get_timestamp(struct net_context *context,
-			      struct net_pkt *pkt,
-			      struct net_ptp_time *timestamp);
-#else
-static inline int net_context_get_timestamp(struct net_context *context,
-					    struct net_pkt *pkt,
-					    struct net_ptp_time *timestamp)
-{
-	ARG_UNUSED(context);
-	ARG_UNUSED(pkt);
-	ARG_UNUSED(timestamp);
-
-	return -ENOTSUP;
-}
-#endif
-
 #if defined(CONFIG_COAP)
 /**
  * @brief CoAP init function declaration. It belongs here because we don't want
@@ -181,6 +164,15 @@ enum net_verdict net_context_packet_received(struct net_conn *conn,
 #if defined(CONFIG_NET_IPV4)
 extern uint16_t net_calc_chksum_ipv4(struct net_pkt *pkt);
 #endif /* CONFIG_NET_IPV4 */
+
+#if defined(CONFIG_NET_IPV4_IGMP)
+uint16_t net_calc_chksum_igmp(uint8_t *data, size_t len);
+enum net_verdict net_ipv4_igmp_input(struct net_pkt *pkt,
+				     struct net_ipv4_hdr *ip_hdr);
+#else
+#define net_ipv4_igmp_input(...)
+#define net_calc_chksum_igmp(data, len) 0U
+#endif /* CONFIG_NET_IPV4_IGMP */
 
 static inline uint16_t net_calc_chksum_icmpv6(struct net_pkt *pkt)
 {

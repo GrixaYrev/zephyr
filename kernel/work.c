@@ -135,7 +135,7 @@ void k_work_init(struct k_work *work,
 		  k_work_handler_t handler)
 {
 	__ASSERT_NO_MSG(work != NULL);
-	__ASSERT_NO_MSG(handler != 0);
+	__ASSERT_NO_MSG(handler != NULL);
 
 	*work = (struct k_work)Z_WORK_INITIALIZER(handler);
 }
@@ -395,7 +395,7 @@ static bool work_flush_locked(struct k_work *work,
 			      struct z_work_flusher *flusher)
 {
 	bool need_flush = (flags_get(&work->flags)
-			   & (K_WORK_QUEUED | K_WORK_RUNNING)) != 0;
+			   & (K_WORK_QUEUED | K_WORK_RUNNING)) != 0U;
 
 	if (need_flush) {
 		struct k_work_q *queue = work->queue;
@@ -524,10 +524,13 @@ bool k_work_cancel_sync(struct k_work *work,
 
 	struct z_work_canceller *canceller = &sync->canceller;
 	k_spinlock_key_t key = k_spin_lock(&lock);
+	bool pending = (work_busy_get_locked(work) != 0U);
+	bool need_wait = false;
 
-	(void)cancel_async_locked(work);
-
-	bool need_wait = cancel_sync_locked(work, canceller);
+	if (pending) {
+		(void)cancel_async_locked(work);
+		need_wait = cancel_sync_locked(work, canceller);
+	}
 
 	k_spin_unlock(&lock, key);
 
@@ -535,7 +538,7 @@ bool k_work_cancel_sync(struct k_work *work,
 		k_sem_take(&canceller->sem, K_FOREVER);
 	}
 
-	return need_wait;
+	return pending;
 }
 
 /* Work has been dequeued and is about to be invoked by the work
@@ -646,6 +649,11 @@ static void work_queue_main(void *workq_ptr, void *p2, void *p3)
 			 * submissions.
 			 */
 			(void)z_sched_wake_all(&queue->drainq, 1, NULL);
+		} else {
+			/* No work is available and no queue state requires
+			 * special handling.
+			 */
+			;
 		}
 
 		if (work == NULL) {
@@ -666,7 +674,7 @@ static void work_queue_main(void *workq_ptr, void *p2, void *p3)
 			bool yield;
 			k_work_handler_t handler = work->handler;
 
-			__ASSERT_NO_MSG(handler != 0);
+			__ASSERT_NO_MSG(handler != NULL);
 
 			if (work_set_running(work, queue)) {
 				handler(work);
@@ -807,7 +815,7 @@ void k_work_init_delayable(struct k_work_delayable *dwork,
 			    k_work_handler_t handler)
 {
 	__ASSERT_NO_MSG(dwork != NULL);
-	__ASSERT_NO_MSG(handler != 0);
+	__ASSERT_NO_MSG(handler != NULL);
 
 	*dwork = (struct k_work_delayable){
 		.work = {
@@ -930,8 +938,8 @@ int k_work_schedule_for_queue(struct k_work_q *queue,
 	int ret = 0;
 	k_spinlock_key_t key = k_spin_lock(&lock);
 
-	/* Schedule the work item if it's idle. */
-	if (work_busy_get_locked(work) == 0U) {
+	/* Schedule the work item if it's idle or running. */
+	if ((work_busy_get_locked(work) & ~K_WORK_RUNNING) == 0U) {
 		ret = schedule_for_queue_locked(&queue, dwork, delay);
 	}
 
@@ -983,10 +991,13 @@ bool k_work_cancel_delayable_sync(struct k_work_delayable *dwork,
 
 	struct z_work_canceller *canceller = &sync->canceller;
 	k_spinlock_key_t key = k_spin_lock(&lock);
+	bool pending = (work_delayable_busy_get_locked(dwork) != 0U);
+	bool need_wait = false;
 
-	(void)cancel_delayable_async_locked(dwork);
-
-	bool need_wait = cancel_sync_locked(&dwork->work, canceller);
+	if (pending) {
+		(void)cancel_delayable_async_locked(dwork);
+		need_wait = cancel_sync_locked(&dwork->work, canceller);
+	}
 
 	k_spin_unlock(&lock, key);
 
@@ -994,7 +1005,7 @@ bool k_work_cancel_delayable_sync(struct k_work_delayable *dwork,
 		k_sem_take(&canceller->sem, K_FOREVER);
 	}
 
-	return need_wait;
+	return pending;
 }
 
 bool k_work_flush_delayable(struct k_work_delayable *dwork,

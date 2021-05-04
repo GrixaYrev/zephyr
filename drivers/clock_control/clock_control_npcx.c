@@ -95,7 +95,7 @@ static int npcx_clock_control_get_subsys_rate(const struct device *dev,
 		*rate = 0U;
 		/* Invalid parameters */
 		return -EINVAL;
-	};
+	}
 
 	return 0;
 }
@@ -193,7 +193,7 @@ const struct npcx_pcc_config pcc_config = {
 
 DEVICE_DT_INST_DEFINE(0,
 		    &npcx_clock_control_init,
-		    device_pm_control_nop,
+		    NULL,
 		    NULL, &pcc_config,
 		    PRE_KERNEL_1,
 		    CONFIG_KERNEL_INIT_PRIORITY_OBJECTS,

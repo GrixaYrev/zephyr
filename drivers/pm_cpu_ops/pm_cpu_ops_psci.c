@@ -34,7 +34,7 @@ static int psci_to_dev_err(int ret)
 		return -EINVAL;
 	case PSCI_RET_DENIED:
 		return -EPERM;
-	};
+	}
 
 	return -EINVAL;
 }
@@ -146,6 +146,6 @@ static int psci_init(const struct device *dev)
 	return psci_detect();
 }
 
-DEVICE_DT_INST_DEFINE(0, psci_init, device_pm_control_nop,
+DEVICE_DT_INST_DEFINE(0, psci_init, NULL,
 	&psci_data, NULL, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 	NULL);

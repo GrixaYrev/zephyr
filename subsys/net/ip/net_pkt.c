@@ -1182,10 +1182,18 @@ static struct net_pkt *pkt_alloc(struct k_mem_slab *slab, k_timeout_t timeout)
 #endif
 {
 	struct net_pkt *pkt;
+	uint32_t create_time;
 	int ret;
 
 	if (k_is_in_isr()) {
 		timeout = K_NO_WAIT;
+	}
+
+	if (IS_ENABLED(CONFIG_NET_PKT_RXTIME_STATS) ||
+	    IS_ENABLED(CONFIG_NET_PKT_TXTIME_STATS)) {
+		create_time = k_cycle_get_32();
+	} else {
+		ARG_UNUSED(create_time);
 	}
 
 	ret = k_mem_slab_alloc(slab, (void **)&pkt, timeout);
@@ -1222,17 +1230,7 @@ static struct net_pkt *pkt_alloc(struct k_mem_slab *slab, k_timeout_t timeout)
 
 	if (IS_ENABLED(CONFIG_NET_PKT_RXTIME_STATS) ||
 	    IS_ENABLED(CONFIG_NET_PKT_TXTIME_STATS)) {
-		struct net_ptp_time tp = {
-			/* Use the nanosecond field to temporarily
-			 * store the cycle count as it is a 32-bit
-			 * variable. The net_pkt timestamp field is used
-			 * to calculate how long it takes the packet to travel
-			 * between network device driver and application.
-			 */
-			.nanosecond = k_cycle_get_32(),
-		};
-
-		net_pkt_set_timestamp(pkt, &tp);
+		net_pkt_set_create_time(pkt, create_time);
 	}
 
 	net_pkt_set_vlan_tag(pkt, NET_VLAN_TAG_UNSPEC);
@@ -1740,6 +1738,7 @@ static void clone_pkt_attributes(struct net_pkt *pkt, struct net_pkt *clone_pkt)
 	net_pkt_set_timestamp(clone_pkt, net_pkt_timestamp(pkt));
 	net_pkt_set_priority(clone_pkt, net_pkt_priority(pkt));
 	net_pkt_set_orig_iface(clone_pkt, net_pkt_orig_iface(pkt));
+	net_pkt_set_captured(clone_pkt, net_pkt_is_captured(pkt));
 
 	if (IS_ENABLED(CONFIG_NET_IPV4) && net_pkt_family(pkt) == AF_INET) {
 		net_pkt_set_ipv4_ttl(clone_pkt, net_pkt_ipv4_ttl(pkt));
@@ -1765,9 +1764,16 @@ struct net_pkt *net_pkt_clone(struct net_pkt *pkt, k_timeout_t timeout)
 	struct net_pkt *clone_pkt;
 	struct net_pkt_cursor backup;
 
-	clone_pkt = net_pkt_alloc_with_buffer(net_pkt_iface(pkt),
-					      net_pkt_get_len(pkt),
-					      AF_UNSPEC, 0, timeout);
+#if NET_LOG_LEVEL >= LOG_LEVEL_DBG
+	clone_pkt = pkt_alloc_with_buffer(pkt->slab, net_pkt_iface(pkt),
+					  net_pkt_get_len(pkt),
+					  AF_UNSPEC, 0, timeout,
+					  __func__, __LINE__);
+#else
+	clone_pkt = pkt_alloc_with_buffer(pkt->slab, net_pkt_iface(pkt),
+					  net_pkt_get_len(pkt),
+					  AF_UNSPEC, 0, timeout);
+#endif
 	if (!clone_pkt) {
 		return NULL;
 	}

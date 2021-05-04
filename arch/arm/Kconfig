@@ -9,10 +9,6 @@ menu "ARM Options"
 config ARCH
 	default "arm"
 
-config ARM64
-	bool
-	select 64BIT
-
 config CPU_CORTEX
 	bool
 	help
@@ -38,18 +34,26 @@ config ARM_CUSTOM_INTERRUPT_CONTROLLER
 	       family cores. The Cortex-M family cores are always equipped with
 	       the ARM Nested Vectored Interrupt Controller (NVIC).
 
-config HAS_ARM_SMCCC
-	bool
+config CODE_DATA_RELOCATION
+	bool "Relocate code/data sections"
+	depends on CPU_CORTEX_M
 	help
-	  Include support for the Secure Monitor Call (SMC) and Hypervisor
-	  Call (HVC) instructions on Armv7 and above architectures.
+	  When selected this will relocate .text, data and .bss sections from
+	  the specified files and places it in the required memory region. The
+	  files should be specified in the CMakeList.txt file with
+	  a cmake API zephyr_code_relocate().
 
-if !ARM64
+config CODE_DATA_RELOCATION_SRAM
+	bool "Relocate code/data sections to SRAM"
+	depends on CPU_CORTEX_M
+	select CODE_DATA_RELOCATION
+	help
+	  When selected this will relocate .text, data and .bss sections from
+	  the specified files and places it in SRAM. The files should be specified
+	  in the CMakeList.txt file with a cmake API zephyr_code_relocate(). This
+	  config is used to create an MPU entry for the SRAM space used for code
+	  relocation.
+
 rsource "core/aarch32/Kconfig"
-endif
-
-if ARM64
-rsource "core/aarch64/Kconfig"
-endif
 
 endmenu

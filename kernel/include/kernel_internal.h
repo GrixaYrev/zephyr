@@ -199,9 +199,6 @@ void z_thread_mark_switched_out(void);
  */
 void z_mem_manage_init(void);
 
-/* Workaround for build-time page table mapping of the kernel */
-void z_kernel_map_fixup(void);
-
 #define LOCKED(lck) for (k_spinlock_key_t __i = {},			\
 					  __key = k_spin_lock(lck);	\
 			!__i.key;					\
@@ -248,6 +245,22 @@ enum pm_state pm_system_suspend(int32_t ticks);
 void pm_system_resume(void);
 
 #endif
+
+#ifdef CONFIG_DEMAND_PAGING_TIMING_HISTOGRAM
+/**
+ * Initialize the timing histograms for demand paging.
+ */
+void z_paging_histogram_init(void);
+
+/**
+ * Increment the counter in the timing histogram.
+ *
+ * @param hist The timing histogram to be updated.
+ * @param cycles Time spent in measured operation.
+ */
+void z_paging_histogram_inc(struct k_mem_paging_histogram_t *hist,
+			    uint32_t cycles);
+#endif /* CONFIG_DEMAND_PAGING_TIMING_HISTOGRAM */
 
 #ifdef __cplusplus
 }

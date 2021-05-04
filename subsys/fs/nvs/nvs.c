@@ -49,11 +49,6 @@ static int nvs_flash_al_wrt(struct nvs_fs *fs, uint32_t addr, const void *data,
 	offset += fs->sector_size * (addr >> ADDR_SECT_SHIFT);
 	offset += addr & ADDR_OFFS_MASK;
 
-	rc = flash_write_protection_set(fs->flash_device, false);
-	if (rc) {
-		/* flash protection set error */
-		return rc;
-	}
 	blen = len & ~(fs->flash_parameters->write_block_size - 1U);
 	if (blen > 0) {
 		rc = flash_write(fs->flash_device, offset, data8, blen);
@@ -72,14 +67,9 @@ static int nvs_flash_al_wrt(struct nvs_fs *fs, uint32_t addr, const void *data,
 
 		rc = flash_write(fs->flash_device, offset, buf,
 				 fs->flash_parameters->write_block_size);
-		if (rc) {
-			/* flash write error */
-			goto end;
-		}
 	}
 
 end:
-	(void) flash_write_protection_set(fs->flash_device, true);
 	return rc;
 }
 
@@ -239,20 +229,11 @@ static int nvs_flash_erase_sector(struct nvs_fs *fs, uint32_t addr)
 	offset = fs->offset;
 	offset += fs->sector_size * (addr >> ADDR_SECT_SHIFT);
 
-	rc = flash_write_protection_set(fs->flash_device, false);
-	if (rc) {
-		/* flash protection set error */
-		return rc;
-	}
 	LOG_DBG("Erasing flash at %lx, len %d", (long int) offset,
 		fs->sector_size);
 	rc = flash_erase(fs->flash_device, offset, fs->sector_size);
-	if (rc) {
-		/* flash erase error */
-		return rc;
-	}
-	(void) flash_write_protection_set(fs->flash_device, true);
-	return 0;
+
+	return rc;
 }
 
 /* crc update on allocation entry */
@@ -651,8 +632,13 @@ static int nvs_startup(struct nvs_fs *fs)
 		if (!nvs_ate_crc8_check(&last_ate)) {
 			/* crc8 is ok, complete write of ate was performed */
 			fs->data_wra = addr & ADDR_SECT_MASK;
-			fs->data_wra += last_ate.offset;
-			fs->data_wra += nvs_al_size(fs, last_ate.len);
+			/* Align the data write address to the current
+			 * write block size so that it is possible to write to
+			 * the sector even if the block size has changed after
+			 * a software upgrade (unless the physical ATE size
+			 * will change)."
+			 */
+			fs->data_wra += nvs_al_size(fs, last_ate.offset + last_ate.len);
 
 			/* ate on the last possition within the sector is
 			 * reserved for deletion an entry

@@ -302,17 +302,7 @@ static void esp_dns_work(struct k_work *work)
 	}
 
 	dnsctx = dns_resolve_get_default();
-	for (i = 0; i < CONFIG_DNS_NUM_CONCUR_QUERIES; i++) {
-		if (!dnsctx->queries[i].cb) {
-			continue;
-		}
-
-		dns_resolve_cancel(dnsctx, dnsctx->queries[i].id);
-	}
-
-	dns_resolve_close(dnsctx);
-
-	err = dns_resolve_init(dnsctx, NULL, dns_servers);
+	err = dns_resolve_reconfigure(dnsctx, NULL, dns_servers);
 	if (err) {
 		LOG_ERR("Could not set DNS servers: %d", err);
 	}
@@ -443,8 +433,8 @@ static void esp_ip_addr_work(struct k_work *work)
 			   ESP_CMD_TIMEOUT);
 	if (ret < 0) {
 		LOG_WRN("Failed to query IP settings: ret %d", ret);
-		k_delayed_work_submit_to_queue(&dev->workq, &dev->ip_addr_work,
-					       K_SECONDS(5));
+		k_work_reschedule_for_queue(&dev->workq, &dev->ip_addr_work,
+					    K_SECONDS(5));
 		return;
 	}
 
@@ -471,8 +461,8 @@ MODEM_CMD_DEFINE(on_cmd_got_ip)
 	struct esp_data *dev = CONTAINER_OF(data, struct esp_data,
 					    cmd_handler_data);
 
-	k_delayed_work_submit_to_queue(&dev->workq, &dev->ip_addr_work,
-				       K_SECONDS(1));
+	k_work_reschedule_for_queue(&dev->workq, &dev->ip_addr_work,
+				    K_SECONDS(1));
 
 	return 0;
 }
@@ -1087,7 +1077,7 @@ static int esp_init(const struct device *dev)
 	k_sem_init(&data->sem_if_up, 0, 1);
 
 	k_work_init(&data->init_work, esp_init_work);
-	k_delayed_work_init(&data->ip_addr_work, esp_ip_addr_work);
+	k_work_init_delayable(&data->ip_addr_work, esp_ip_addr_work);
 	k_work_init(&data->scan_work, esp_mgmt_scan_work);
 	k_work_init(&data->connect_work, esp_mgmt_connect_work);
 	k_work_init(&data->mode_switch_work, esp_mode_switch_work);
@@ -1098,9 +1088,10 @@ static int esp_init(const struct device *dev)
 	esp_socket_init(data);
 
 	/* initialize the work queue */
-	k_work_q_start(&data->workq, esp_workq_stack,
-		       K_KERNEL_STACK_SIZEOF(esp_workq_stack),
-		       K_PRIO_COOP(CONFIG_WIFI_ESP_WORKQ_THREAD_PRIORITY));
+	k_work_queue_start(&data->workq, esp_workq_stack,
+			   K_KERNEL_STACK_SIZEOF(esp_workq_stack),
+			   K_PRIO_COOP(CONFIG_WIFI_ESP_WORKQ_THREAD_PRIORITY),
+			   NULL);
 	k_thread_name_set(&data->workq.thread, "esp_workq");
 
 	/* cmd handler */
@@ -1154,7 +1145,7 @@ error:
 	return ret;
 }
 
-NET_DEVICE_DT_INST_OFFLOAD_DEFINE(0, esp_init, device_pm_control_nop,
+NET_DEVICE_DT_INST_OFFLOAD_DEFINE(0, esp_init, NULL,
 				  &esp_driver_data, NULL,
 				  CONFIG_WIFI_INIT_PRIORITY, &esp_api,
 				  ESP_MTU);

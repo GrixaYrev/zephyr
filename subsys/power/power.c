@@ -6,6 +6,7 @@
 
 #include <zephyr.h>
 #include <kernel.h>
+#include <timeout_q.h>
 #include <init.h>
 #include <string.h>
 #include <power/power.h>
@@ -133,7 +134,6 @@ void pm_system_resume(void)
 		post_ops_done = 1;
 		pm_power_state_exit_post_ops(z_power_state);
 		pm_state_notify(false);
-		k_sched_unlock();
 	}
 }
 
@@ -158,6 +158,7 @@ void pm_power_state_force(struct pm_state_info info)
 	pm_debug_stop_timer();
 
 	pm_system_resume();
+	k_sched_unlock();
 }
 
 #if CONFIG_PM_DEVICE
@@ -179,6 +180,23 @@ enum pm_state pm_system_suspend(int32_t ticks)
 		return z_power_state.state;
 	}
 	post_ops_done = 0;
+
+	if (ticks != K_TICKS_FOREVER) {
+		/*
+		 * Just a sanity check in case the policy manager does not
+		 * handle this error condition properly.
+		 */
+		__ASSERT(z_power_state.min_residency_us >=
+			z_power_state.exit_latency_us,
+			"min_residency_us < exit_latency_us");
+
+		/*
+		 * We need to set the timer to interrupt a little bit early to
+		 * accommodate the time required by the CPU to fully wake up.
+		 */
+		z_set_timeout_expiry(ticks -
+		     k_us_to_ticks_ceil32(z_power_state.exit_latency_us), true);
+	}
 
 #if CONFIG_PM_DEVICE
 
@@ -231,6 +249,7 @@ enum pm_state pm_system_suspend(int32_t ticks)
 #endif
 	pm_log_debug_info(z_power_state.state);
 	pm_system_resume();
+	k_sched_unlock();
 
 	return z_power_state.state;
 }
