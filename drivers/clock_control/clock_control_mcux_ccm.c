@@ -135,6 +135,12 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 		break;
 #endif
 
+#ifdef CONFIG_MCUX_FLEXIO
+	case IMX_CCM_FLEXIO_CLK:
+		*rate = 
+		break;
+#endif
+
 	}
 
 	return 0;
