@@ -48,7 +48,7 @@ properties:
 
     cs-pin:
       type: int
-      required: false # FIXME: ??? No need for master ???
+      required: true
       description: |
-        Pin select for enable. 
+        Pin select for enable. Not really used, but need for HAL.
 

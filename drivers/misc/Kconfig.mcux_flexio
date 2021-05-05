@@ -3,6 +3,6 @@
 
 config MCUX_FLEXIO
 	bool
-	depends on HAS_MCUX && CLOCK_CONTROL
+	depends on HAS_MCUX_FLEXIO && CLOCK_CONTROL
 	help
-	  Enable support for mcux flexio.
+	  Set, if support for mcux flexio.

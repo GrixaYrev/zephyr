@@ -6,6 +6,6 @@
 config SPI_MCUX_FLEXIO_SPI
 	bool "MCUX FlexIO SPI driver"
 	select MCUX_FLEXIO
-	depends on HAS_MCUX && CLOCK_CONTROL
+	depends on HAS_MCUX_FLEXIO && CLOCK_CONTROL
 	help
 	  Enable support for mcux flexio spi driver.

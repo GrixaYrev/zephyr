@@ -271,3 +271,50 @@ static const struct spi_driver_api spi_mcux_driver_api = {
 #endif
 	.release = spi_mcux_release,
 };
+
+
+#define SPI_MCUX_FLEXIO_SPI_INIT(n)						\
+	static void spi_mcux_config_func_##n(const struct device *dev);	\
+									\
+	static const struct spi_mcux_config spi_mcux_config_##n = {	\
+		.flexio_spi.flexioBase = (FLEXIO_Type *) DT_REG_ADDR(DT_INST_PHANDLE(n, flexio)),		\
+		.flexio_spi.SDOPinIndex = DT_INST_PROP(n, sdo_pin),\
+		.flexio_spi.SDIPinIndex = DT_INST_PROP(n, sdi_pin),\
+		.flexio_spi.SCKPinIndex = DT_INST_PROP(n, sck_pin),\
+		.flexio_spi.CSnPinIndex = DT_INST_PROP(n, cs_pin), \
+		.clock_dev = DEVICE_DT_GET(DT_CLOCKS_CTLR(DT_INST_PHANDLE(n, flexio))),	\
+		.clock_subsys =						\
+		(clock_control_subsys_t)DT_CLOCKS_CELL(DT_INST_PHANDLE(n, flexio), name),	\
+		.irq_config_func = spi_mcux_config_func_##n,		\
+		.pcs_sck_delay = UTIL_AND(				\
+			DT_INST_NODE_HAS_PROP(n, pcs_sck_delay),	\
+			DT_INST_PROP(n, pcs_sck_delay)),		\
+		.sck_pcs_delay = UTIL_AND(				\
+			DT_INST_NODE_HAS_PROP(n, sck_pcs_delay),	\
+			DT_INST_PROP(n, sck_pcs_delay)),		\
+		.transfer_delay = UTIL_AND(				\
+			DT_INST_NODE_HAS_PROP(n, transfer_delay),	\
+			DT_INST_PROP(n, transfer_delay)),		\
+	};								\
+									\
+	static struct spi_mcux_data spi_mcux_data_##n = {		\
+		SPI_CONTEXT_INIT_LOCK(spi_mcux_data_##n, ctx),		\
+		SPI_CONTEXT_INIT_SYNC(spi_mcux_data_##n, ctx),		\
+	};								\
+									\
+	DEVICE_DT_INST_DEFINE(n, &spi_mcux_init, NULL,			\
+			    &spi_mcux_data_##n,				\
+			    &spi_mcux_config_##n, POST_KERNEL,		\
+			    CONFIG_KERNEL_INIT_PRIORITY_DEVICE,		\
+			    &spi_mcux_driver_api);			\
+									\
+	static void spi_mcux_config_func_##n(const struct device *dev)	\
+	{								\
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),	\
+			    spi_mcux_isr, DEVICE_DT_INST_GET(n), 0);	\
+									\
+		irq_enable(DT_INST_IRQN(n));				\
+	}
+
+DT_INST_FOREACH_STATUS_OKAY(SPI_MCUX_FLEXIO_SPI_INIT)
+
