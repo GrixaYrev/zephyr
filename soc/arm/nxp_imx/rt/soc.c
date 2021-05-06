@@ -216,6 +216,19 @@ static ALWAYS_INLINE void clock_init(void)
 	CLOCK_SetMux(kCLOCK_CanMux, 2); /* Set Can clock source. */
 #endif
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(flexio1), okay) && CONFIG_MCUX_FLEXIO
+	CLOCK_SetDiv(kCLOCK_Flexio1PreDiv, 3); 	/* Set FLEXIO1_CLK_PRED. */
+	CLOCK_SetDiv(kCLOCK_Flexio1Div, 4); 		/* Set FLEXIO1_CLK_PODF. */
+	CLOCK_SetMux(kCLOCK_Flexio1Mux, 3); 		/* Set FLEXIO1 clock source. */
+#endif
+
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(flexio2), okay) \
+		 || DT_NODE_HAS_STATUS(DT_NODELABEL(flexio3), okay)) && CONFIG_MCUX_FLEXIO
+	CLOCK_SetDiv(kCLOCK_Flexio2PreDiv, 3); 	/* Set FLEXIO2_CLK_PRED. */
+	CLOCK_SetDiv(kCLOCK_Flexio2Div, 4); 		/* Set FLEXIO2_CLK_PODF. */
+	CLOCK_SetMux(kCLOCK_Flexio2Mux, 3); 		/* Set FLEXIO2 clock source. */
+#endif
+
 #if !(defined(CONFIG_CODE_FLEXSPI) || defined(CONFIG_CODE_FLEXSPI2)) && \
 	defined(CONFIG_MEMC_MCUX_FLEXSPI) && \
 	DT_NODE_HAS_STATUS(DT_NODELABEL(flexspi), okay)

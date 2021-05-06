@@ -39,7 +39,7 @@ static void spi_mcux_transfer_next_packet(const struct device *dev)
 {
 	const struct spi_mcux_config *config = dev->config;
 	struct spi_mcux_data *data = dev->data;
-	FLEXIO_SPI_Type *flexio_spi = &config->flexio_spi;
+	FLEXIO_SPI_Type *flexio_spi = (FLEXIO_SPI_Type *)&config->flexio_spi;
 	struct spi_context *ctx = &data->ctx;
 	flexio_spi_transfer_t transfer;
 	status_t status;
@@ -88,7 +88,7 @@ static void spi_mcux_transfer_next_packet(const struct device *dev)
 
 	data->transfer_len = transfer.dataSize;
 
-	status = FLEXIO_SPI_MasterTransferNonBlocking(flexio_spi->flexioBase, &data->handle,
+	status = FLEXIO_SPI_MasterTransferNonBlocking(flexio_spi, &data->handle,
 						 &transfer);
 	if (status != kStatus_Success) {
 		LOG_ERR("Transfer could not start");
@@ -100,7 +100,7 @@ static void spi_mcux_isr(const struct device *dev)
 {
 	const struct spi_mcux_config *config = dev->config;
 	struct spi_mcux_data *data = dev->data;
-	FLEXIO_SPI_Type *flexio_spi = &config->flexio_spi;
+	FLEXIO_SPI_Type *flexio_spi = (FLEXIO_SPI_Type *)&config->flexio_spi;
 
 	FLEXIO_SPI_MasterTransferHandleIRQ(flexio_spi, &data->handle);
 }
@@ -123,7 +123,7 @@ static int spi_mcux_configure(const struct device *dev,
 {
 	const struct spi_mcux_config *config = dev->config;
 	struct spi_mcux_data *data = dev->data;
-	FLEXIO_SPI_Type *flexio_spi = &config->flexio_spi;
+	FLEXIO_SPI_Type *flexio_spi = (FLEXIO_SPI_Type *)&config->flexio_spi;
 	flexio_spi_master_config_t master_config;
 	uint32_t clock_freq;
 	uint32_t word_size;
@@ -136,7 +136,7 @@ static int spi_mcux_configure(const struct device *dev,
 	FLEXIO_SPI_MasterGetDefaultConfig(&master_config);
 
 	word_size = SPI_WORD_SIZE_GET(spi_cfg->operation);
-	if ((word_size != 8) || (word_size != 16)) {
+	if ((word_size != 8) && (word_size != 16)) {
 		LOG_ERR("Word size %d must be 8 or 16", word_size);
 		return -EINVAL;
 	}
@@ -278,23 +278,16 @@ static const struct spi_driver_api spi_mcux_driver_api = {
 									\
 	static const struct spi_mcux_config spi_mcux_config_##n = {	\
 		.flexio_spi.flexioBase = (FLEXIO_Type *) DT_REG_ADDR(DT_INST_PHANDLE(n, flexio)),		\
-		.flexio_spi.SDOPinIndex = DT_INST_PROP(n, sdo_pin),\
-		.flexio_spi.SDIPinIndex = DT_INST_PROP(n, sdi_pin),\
-		.flexio_spi.SCKPinIndex = DT_INST_PROP(n, sck_pin),\
-		.flexio_spi.CSnPinIndex = DT_INST_PROP(n, cs_pin), \
+		.flexio_spi.SDOPinIndex  = DT_INST_PROP(n, sdo_pin),\
+		.flexio_spi.SDIPinIndex  = DT_INST_PROP(n, sdi_pin),\
+		.flexio_spi.SCKPinIndex  = DT_INST_PROP(n, sck_pin),\
+		.flexio_spi.CSnPinIndex  = DT_INST_PROP(n, cs_pin), \
+		.flexio_spi.shifterIndex = DT_INST_PROP(n, shifters), \
+		.flexio_spi.timerIndex   = DT_INST_PROP(n, timers), \
 		.clock_dev = DEVICE_DT_GET(DT_CLOCKS_CTLR(DT_INST_PHANDLE(n, flexio))),	\
 		.clock_subsys =						\
 		(clock_control_subsys_t)DT_CLOCKS_CELL(DT_INST_PHANDLE(n, flexio), name),	\
 		.irq_config_func = spi_mcux_config_func_##n,		\
-		.pcs_sck_delay = UTIL_AND(				\
-			DT_INST_NODE_HAS_PROP(n, pcs_sck_delay),	\
-			DT_INST_PROP(n, pcs_sck_delay)),		\
-		.sck_pcs_delay = UTIL_AND(				\
-			DT_INST_NODE_HAS_PROP(n, sck_pcs_delay),	\
-			DT_INST_PROP(n, sck_pcs_delay)),		\
-		.transfer_delay = UTIL_AND(				\
-			DT_INST_NODE_HAS_PROP(n, transfer_delay),	\
-			DT_INST_PROP(n, transfer_delay)),		\
 	};								\
 									\
 	static struct spi_mcux_data spi_mcux_data_##n = {		\
@@ -310,10 +303,10 @@ static const struct spi_driver_api spi_mcux_driver_api = {
 									\
 	static void spi_mcux_config_func_##n(const struct device *dev)	\
 	{								\
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),	\
+		IRQ_CONNECT(DT_IRQN(DT_INST_PHANDLE(n, flexio)), DT_IRQ(DT_INST_PHANDLE(n, flexio), priority),	\
 			    spi_mcux_isr, DEVICE_DT_INST_GET(n), 0);	\
 									\
-		irq_enable(DT_INST_IRQN(n));				\
+		irq_enable(DT_IRQN(DT_INST_PHANDLE(n, flexio)));				\
 	}
 
 DT_INST_FOREACH_STATUS_OKAY(SPI_MCUX_FLEXIO_SPI_INIT)
