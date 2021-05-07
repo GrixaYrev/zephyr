@@ -118,99 +118,103 @@ static void spi_mcux_master_transfer_callback(FLEXIO_SPI_Type *flexio_spi,
 }
 
 
-// static int spi_flexio_master_init(FLEXIO_SPI_Type *base, 
-// 																	uint8_t pol, uint8_t pha, flexio_spi_data_bitcount_mode_t mode,
-// 																	uint32_t src_clock, uint32_t baudrate)
-// {
-// 	flexio_shifter_config_t shifterConfig;
-//   flexio_timer_config_t timerConfig;
-// 	uint32_t ctrlReg  = 0;
-// 	uint16_t timerDiv = 0;
-// 	uint16_t timerCmp = 0;
+#define USE_FSL_HAL_FOR_INIT (0)
+
+#if (USE_FSL_HAL_FOR_INIT == 0)
+static void spi_flexio_master_init(FLEXIO_SPI_Type *base, 
+																	 uint8_t pol, uint8_t pha, flexio_spi_data_bitcount_mode_t mode,
+																	 uint32_t src_clock, uint32_t baudrate)
+{
+	flexio_shifter_config_t shifterConfig;
+  flexio_timer_config_t timerConfig;
+	uint32_t ctrlReg  = 0;
+	uint16_t timerDiv = 0;
+	uint16_t timerCmp = 0;
 	
-// 	/* Clear the shifterConfig & timerConfig struct. */
-// 	(void)memset(&shifterConfig, 0, sizeof(shifterConfig));
-// 	(void)memset(&timerConfig, 0, sizeof(timerConfig));
+	/* Clear the shifterConfig & timerConfig struct. */
+	(void)memset(&shifterConfig, 0, sizeof(shifterConfig));
+	(void)memset(&timerConfig, 0, sizeof(timerConfig));
 
-// #if !(defined(FSL_SDK_DISABLE_DRIVER_CLOCK_CONTROL) && FSL_SDK_DISABLE_DRIVER_CLOCK_CONTROL)
-// 	/* Ungate flexio clock. */
-// 	CLOCK_EnableClock(s_flexioClocks[FLEXIO_SPI_GetInstance(base)]);
-// #endif /* FSL_SDK_DISABLE_DRIVER_CLOCK_CONTROL */
+#if !(defined(FSL_SDK_DISABLE_DRIVER_CLOCK_CONTROL) && FSL_SDK_DISABLE_DRIVER_CLOCK_CONTROL)
+	/* Ungate flexio clock. */
+	CLOCK_EnableClock(s_flexioClocks[FLEXIO_GetInstance(base->flexioBase)]);
+#endif /* FSL_SDK_DISABLE_DRIVER_CLOCK_CONTROL */
 
-// 	/* Configure FLEXIO SPI Master */
-// 	ctrlReg = base->flexioBase->CTRL;
-// 	ctrlReg &= ~(FLEXIO_CTRL_DOZEN_MASK | FLEXIO_CTRL_DBGE_MASK | FLEXIO_CTRL_FASTACC_MASK | FLEXIO_CTRL_FLEXEN_MASK);
-// 	ctrlReg |= (FLEXIO_CTRL_DBGE(true) | FLEXIO_CTRL_FASTACC(false) | FLEXIO_CTRL_FLEXEN(true));
-// 	ctrlReg |= FLEXIO_CTRL_DOZEN_MASK;
-// 	base->flexioBase->CTRL = ctrlReg;
+	/* Configure FLEXIO SPI Master */
+	ctrlReg = base->flexioBase->CTRL;
+	ctrlReg &= ~(FLEXIO_CTRL_DOZEN_MASK | FLEXIO_CTRL_DBGE_MASK | FLEXIO_CTRL_FASTACC_MASK | FLEXIO_CTRL_FLEXEN_MASK);
+	ctrlReg |= (FLEXIO_CTRL_DBGE(true) | FLEXIO_CTRL_FASTACC(false) | FLEXIO_CTRL_FLEXEN(true));
+	ctrlReg |= FLEXIO_CTRL_DOZEN_MASK;
+	base->flexioBase->CTRL = ctrlReg;
 
-// 	/* Do hardware configuration. */
-// 	/* 1. Configure the shifter 0 for tx. */
-// 	shifterConfig.timerSelect = base->timerIndex[0];
-// 	shifterConfig.pinConfig   = kFLEXIO_PinConfigOutput;
-// 	shifterConfig.pinSelect   = base->SDOPinIndex;
-// 	shifterConfig.pinPolarity = kFLEXIO_PinActiveHigh;
-// 	shifterConfig.shifterMode = kFLEXIO_ShifterModeTransmit;
-// 	shifterConfig.inputSource = kFLEXIO_ShifterInputFromPin;
-// 	if (!pha)
-// 	{
-// 		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnNegitive;
-// 		shifterConfig.shifterStop   = kFLEXIO_ShifterStopBitDisable;
-// 		shifterConfig.shifterStart  = kFLEXIO_ShifterStartBitDisabledLoadDataOnEnable;
-// 	}
-// 	else
-// 	{
-// 		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnPositive;
-// 		shifterConfig.shifterStop   = kFLEXIO_ShifterStopBitLow;
-// 		shifterConfig.shifterStart  = kFLEXIO_ShifterStartBitDisabledLoadDataOnShift;
-// 	}
-// 	FLEXIO_SetShifterConfig(base->flexioBase, base->shifterIndex[0], &shifterConfig);
+	/* Do hardware configuration. */
+	/* 1. Configure the shifter 0 for tx. */
+	shifterConfig.timerSelect = base->timerIndex[0];
+	shifterConfig.pinConfig   = kFLEXIO_PinConfigOutput;
+	shifterConfig.pinSelect   = base->SDOPinIndex;
+	shifterConfig.pinPolarity = kFLEXIO_PinActiveHigh;
+	shifterConfig.shifterMode = kFLEXIO_ShifterModeTransmit;
+	shifterConfig.inputSource = kFLEXIO_ShifterInputFromPin;
+	if (!pha)
+	{
+		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnNegitive;
+		shifterConfig.shifterStop   = kFLEXIO_ShifterStopBitDisable;
+		shifterConfig.shifterStart  = kFLEXIO_ShifterStartBitDisabledLoadDataOnEnable;
+	}
+	else
+	{
+		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnPositive;
+		shifterConfig.shifterStop   = kFLEXIO_ShifterStopBitLow;
+		shifterConfig.shifterStart  = kFLEXIO_ShifterStartBitDisabledLoadDataOnShift;
+	}
+	FLEXIO_SetShifterConfig(base->flexioBase, base->shifterIndex[0], &shifterConfig);
 
-// 	/* 2. Configure the shifter 1 for rx. */
-// 	shifterConfig.timerSelect  = base->timerIndex[0];
-// 	shifterConfig.pinConfig    = kFLEXIO_PinConfigOutputDisabled;
-// 	shifterConfig.pinSelect    = base->SDIPinIndex;
-// 	shifterConfig.pinPolarity  = kFLEXIO_PinActiveHigh;
-// 	shifterConfig.shifterMode  = kFLEXIO_ShifterModeReceive;
-// 	shifterConfig.inputSource  = kFLEXIO_ShifterInputFromPin;
-// 	shifterConfig.shifterStop  = kFLEXIO_ShifterStopBitDisable;
-// 	shifterConfig.shifterStart = kFLEXIO_ShifterStartBitDisabledLoadDataOnEnable;
-// 	if (!pha)
-// 	{
-// 		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnPositive;
-// 	}
-// 	else
-// 	{
-// 		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnNegitive;
-// 	}
-// 	FLEXIO_SetShifterConfig(base->flexioBase, base->shifterIndex[1], &shifterConfig);
+	/* 2. Configure the shifter 1 for rx. */
+	shifterConfig.timerSelect  = base->timerIndex[0];
+	shifterConfig.pinConfig    = kFLEXIO_PinConfigOutputDisabled;
+	shifterConfig.pinSelect    = base->SDIPinIndex;
+	shifterConfig.pinPolarity  = kFLEXIO_PinActiveHigh;
+	shifterConfig.shifterMode  = kFLEXIO_ShifterModeReceive;
+	shifterConfig.inputSource  = kFLEXIO_ShifterInputFromPin;
+	shifterConfig.shifterStop  = kFLEXIO_ShifterStopBitDisable;
+	shifterConfig.shifterStart = kFLEXIO_ShifterStartBitDisabledLoadDataOnEnable;
+	if (!pha)
+	{
+		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnPositive;
+	}
+	else
+	{
+		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnNegitive;
+	}
+	FLEXIO_SetShifterConfig(base->flexioBase, base->shifterIndex[1], &shifterConfig);
 
-// 	/*3. Configure the timer 0 for SCK. */
-// 	timerConfig.triggerSelect   = FLEXIO_TIMER_TRIGGER_SEL_SHIFTnSTAT(base->shifterIndex[0]);
-// 	timerConfig.triggerPolarity = kFLEXIO_TimerTriggerPolarityActiveLow;
-// 	timerConfig.triggerSource   = kFLEXIO_TimerTriggerSourceInternal;
-// 	timerConfig.pinConfig       = kFLEXIO_PinConfigOutput;
-// 	timerConfig.pinSelect       = base->SCKPinIndex;
-// 	timerConfig.pinPolarity     = kFLEXIO_PinActiveHigh;
-// 	timerConfig.timerMode       = kFLEXIO_TimerModeDual8BitBaudBit;
-// 	timerConfig.timerOutput     = kFLEXIO_TimerOutputZeroNotAffectedByReset;
-// 	timerConfig.timerDecrement  = kFLEXIO_TimerDecSrcOnFlexIOClockShiftTimerOutput;
-// 	timerConfig.timerReset      = kFLEXIO_TimerResetNever;
-// 	timerConfig.timerDisable    = kFLEXIO_TimerDisableOnTimerCompare;
-// 	timerConfig.timerEnable     = kFLEXIO_TimerEnableOnTriggerHigh;
-// 	timerConfig.timerStop       = kFLEXIO_TimerStopBitEnableOnTimerDisable;
-// 	timerConfig.timerStart      = kFLEXIO_TimerStartBitEnabled;
+	/*3. Configure the timer 0 for SCK. */
+	timerConfig.triggerSelect   = FLEXIO_TIMER_TRIGGER_SEL_SHIFTnSTAT(base->shifterIndex[0]);
+	timerConfig.triggerPolarity = kFLEXIO_TimerTriggerPolarityActiveLow;
+	timerConfig.triggerSource   = kFLEXIO_TimerTriggerSourceInternal;
+	timerConfig.pinConfig       = kFLEXIO_PinConfigOutput;
+	timerConfig.pinSelect       = base->SCKPinIndex;
+	timerConfig.pinPolarity     = pol ? kFLEXIO_PinActiveLow : kFLEXIO_PinActiveHigh;;
+	timerConfig.timerMode       = kFLEXIO_TimerModeDual8BitBaudBit;
+	timerConfig.timerOutput     = kFLEXIO_TimerOutputZeroNotAffectedByReset;
+	timerConfig.timerDecrement  = kFLEXIO_TimerDecSrcOnFlexIOClockShiftTimerOutput;
+	timerConfig.timerReset      = kFLEXIO_TimerResetNever;
+	timerConfig.timerDisable    = kFLEXIO_TimerDisableOnTimerCompare;
+	timerConfig.timerEnable     = kFLEXIO_TimerEnableOnTriggerHigh;
+	timerConfig.timerStop       = kFLEXIO_TimerStopBitEnableOnTimerDisable;
+	timerConfig.timerStart      = kFLEXIO_TimerStartBitEnabled;
 
-// 	timerDiv = (uint16_t)(src_clock / baudrate);
-// 	timerDiv = timerDiv / 2U - 1U;
+	timerDiv = (uint16_t)(src_clock / baudrate);
+	timerDiv = timerDiv / 2U - 1U;
 
-// 	timerCmp = ((uint16_t)mode * 2U - 1U) << 8U;
-// 	timerCmp |= timerDiv;
+	timerCmp = ((uint16_t)mode * 2U - 1U) << 8U;
+	timerCmp |= timerDiv;
 
-// 	timerConfig.timerCompare = timerCmp;
+	timerConfig.timerCompare = timerCmp;
 
-// 	FLEXIO_SetTimerConfig(base->flexioBase, base->timerIndex[0], &timerConfig);
-// }
+	FLEXIO_SetTimerConfig(base->flexioBase, base->timerIndex[0], &timerConfig);
+}
+#endif
 
 
 static int spi_mcux_configure(const struct device *dev,
@@ -236,17 +240,6 @@ static int spi_mcux_configure(const struct device *dev,
 		return -EINVAL;
 	}
 
-  master_config.dataMode = (word_size == 8) 
-                           ? kFLEXIO_SPI_8BitMode 
-                           : kFLEXIO_SPI_16BitMode;
-
-  /* No CPOL for FlexIO_SPI */
-
-	master_config.phase =
-		(SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPHA)
-		? kFLEXIO_SPI_ClockPhaseSecondEdge
-		: kFLEXIO_SPI_ClockPhaseFirstEdge;
-
 	if (spi_cfg->operation & SPI_TRANSFER_LSB) {
     if (word_size == 8) {
       data->transfer_flags = kFLEXIO_SPI_8bitLsb;
@@ -261,14 +254,33 @@ static int spi_mcux_configure(const struct device *dev,
     }
   }
 
-	master_config.baudRate_Bps = spi_cfg->frequency;
-
 	if (clock_control_get_rate(config->clock_dev, config->clock_subsys,
 				   &clock_freq)) {
 		return -EINVAL;
 	}
 
+#if (USE_FSL_HAL_FOR_INIT != 0)
+  master_config.dataMode = (word_size == 8) 
+                           ? kFLEXIO_SPI_8BitMode 
+                           : kFLEXIO_SPI_16BitMode;
+
+  /* No CPOL for FlexIO_SPI */
+
+	master_config.phase =
+		(SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPHA)
+		? kFLEXIO_SPI_ClockPhaseSecondEdge
+		: kFLEXIO_SPI_ClockPhaseFirstEdge;
+
+	master_config.baudRate_Bps = spi_cfg->frequency;
+
 	FLEXIO_SPI_MasterInit(flexio_spi, &master_config, clock_freq);
+#else
+	spi_flexio_master_init(flexio_spi, 
+												 (SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPOL), 
+												 (SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPHA),
+												 (word_size == 8) ? kFLEXIO_SPI_8BitMode : kFLEXIO_SPI_16BitMode,
+												 clock_freq, spi_cfg->frequency);
+#endif
 
 	FLEXIO_SPI_MasterTransferCreateHandle(flexio_spi, &data->handle,
 					 spi_mcux_master_transfer_callback,
