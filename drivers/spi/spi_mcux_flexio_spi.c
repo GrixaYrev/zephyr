@@ -155,17 +155,17 @@ static void spi_flexio_master_init(FLEXIO_SPI_Type *base,
 	shifterConfig.pinPolarity = kFLEXIO_PinActiveHigh;
 	shifterConfig.shifterMode = kFLEXIO_ShifterModeTransmit;
 	shifterConfig.inputSource = kFLEXIO_ShifterInputFromPin;
-	if (!pha)
-	{
-		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnNegitive;
-		shifterConfig.shifterStop   = kFLEXIO_ShifterStopBitDisable;
-		shifterConfig.shifterStart  = kFLEXIO_ShifterStartBitDisabledLoadDataOnEnable;
-	}
-	else
+	if (pha)
 	{
 		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnPositive;
 		shifterConfig.shifterStop   = kFLEXIO_ShifterStopBitLow;
 		shifterConfig.shifterStart  = kFLEXIO_ShifterStartBitDisabledLoadDataOnShift;
+	}
+	else
+	{
+		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnNegitive;
+		shifterConfig.shifterStop   = kFLEXIO_ShifterStopBitDisable;
+		shifterConfig.shifterStart  = kFLEXIO_ShifterStartBitDisabledLoadDataOnEnable;
 	}
 	FLEXIO_SetShifterConfig(base->flexioBase, base->shifterIndex[0], &shifterConfig);
 
@@ -178,13 +178,13 @@ static void spi_flexio_master_init(FLEXIO_SPI_Type *base,
 	shifterConfig.inputSource  = kFLEXIO_ShifterInputFromPin;
 	shifterConfig.shifterStop  = kFLEXIO_ShifterStopBitDisable;
 	shifterConfig.shifterStart = kFLEXIO_ShifterStartBitDisabledLoadDataOnEnable;
-	if (!pha)
+	if (pha)
 	{
-		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnPositive;
+		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnNegitive;
 	}
 	else
 	{
-		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnNegitive;
+		shifterConfig.timerPolarity = kFLEXIO_ShifterTimerPolarityOnPositive;
 	}
 	FLEXIO_SetShifterConfig(base->flexioBase, base->shifterIndex[1], &shifterConfig);
 
