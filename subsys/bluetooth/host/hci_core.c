@@ -58,11 +58,6 @@
 #include "direction_internal.h"
 #endif /* CONFIG_BT_DF */
 
-#if !defined(CONFIG_BT_EXT_ADV_LEGACY_SUPPORT)
-#undef BT_FEAT_LE_EXT_ADV
-#define BT_FEAT_LE_EXT_ADV(feat)  1
-#endif
-
 #define HCI_CMD_TIMEOUT      K_SECONDS(10)
 
 /* Stacks for the threads */
@@ -633,7 +628,7 @@ int bt_le_create_conn_legacy(const struct bt_conn *conn)
 int bt_le_create_conn(const struct bt_conn *conn)
 {
 	if (IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-	    BT_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
+	    BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
 		return bt_le_create_conn_ext(conn);
 	}
 
@@ -671,6 +666,33 @@ int bt_hci_disconnect(uint16_t handle, uint8_t reason)
 	return bt_hci_cmd_send_sync(BT_HCI_OP_DISCONNECT, buf, NULL);
 }
 
+static uint16_t disconnected_handles[CONFIG_BT_MAX_CONN];
+static void conn_handle_disconnected(uint16_t handle)
+{
+	for (int i = 0; i < ARRAY_SIZE(disconnected_handles); i++) {
+		if (!disconnected_handles[i]) {
+			/* Use invalid connection handle bits so that connection
+			 * handle 0 can be used as a valid non-zero handle.
+			 */
+			disconnected_handles[i] = ~BT_ACL_HANDLE_MASK | handle;
+		}
+	}
+}
+
+static bool conn_handle_is_disconnected(uint16_t handle)
+{
+	handle |= ~BT_ACL_HANDLE_MASK;
+
+	for (int i = 0; i < ARRAY_SIZE(disconnected_handles); i++) {
+		if (disconnected_handles[i] == handle) {
+			disconnected_handles[i] = 0;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static void hci_disconn_complete_prio(struct net_buf *buf)
 {
 	struct bt_hci_evt_disconn_complete *evt = (void *)buf->data;
@@ -686,7 +708,10 @@ static void hci_disconn_complete_prio(struct net_buf *buf)
 
 	conn = bt_conn_lookup_handle(handle);
 	if (!conn) {
-		BT_ERR("Unable to look up conn with handle %u", handle);
+		/* Priority disconnect complete event received before normal
+		 * connection complete event.
+		 */
+		conn_handle_disconnected(handle);
 		return;
 	}
 
@@ -1008,7 +1033,7 @@ static void le_conn_complete_cancel(void)
 static void le_conn_complete_adv_timeout(void)
 {
 	if (!(IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-	      BT_FEAT_LE_EXT_ADV(bt_dev.le.features))) {
+	      BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features))) {
 		struct bt_le_ext_adv *adv = bt_le_adv_lookup_legacy();
 		struct bt_conn *conn;
 
@@ -1019,7 +1044,7 @@ static void le_conn_complete_adv_timeout(void)
 		atomic_clear_bit(adv->flags, BT_ADV_ENABLED);
 
 		if (IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-		    !BT_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
+		    !BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
 			/* No advertising set terminated event, must be a
 			 * legacy advertiser set.
 			 */
@@ -1076,6 +1101,7 @@ static void enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 {
 	uint16_t handle = sys_le16_to_cpu(evt->handle);
+	bool is_disconnected = conn_handle_is_disconnected(handle);
 	bt_addr_le_t peer_addr, id_addr;
 	struct bt_conn *conn;
 
@@ -1129,7 +1155,7 @@ void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 	if (IS_ENABLED(CONFIG_BT_PERIPHERAL) &&
 	    evt->role == BT_HCI_ROLE_SLAVE &&
 	    !(IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-	      BT_FEAT_LE_EXT_ADV(bt_dev.le.features))) {
+	      BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features))) {
 		struct bt_le_ext_adv *adv = bt_le_adv_lookup_legacy();
 		/* Clear advertising even if we are not able to add connection
 		 * object to keep host in sync with controller state.
@@ -1181,7 +1207,7 @@ void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 		bt_addr_le_copy(&conn->le.init_addr, &peer_addr);
 
 		if (!(IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-		      BT_FEAT_LE_EXT_ADV(bt_dev.le.features))) {
+		      BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features))) {
 			struct bt_le_ext_adv *adv = bt_le_adv_lookup_legacy();
 
 			if (IS_ENABLED(CONFIG_BT_PRIVACY) &&
@@ -1216,7 +1242,7 @@ void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 		}
 
 		if (IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-		    !BT_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
+		    !BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
 			struct bt_le_ext_adv *adv = bt_le_adv_lookup_legacy();
 			/* No advertising set terminated event, must be a
 			 * legacy advertiser set.
@@ -1248,7 +1274,7 @@ void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 
 #if defined(CONFIG_BT_USER_PHY_UPDATE)
 	if (IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-	    BT_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
+	    BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
 		int err;
 
 		err = hci_le_read_phy(conn);
@@ -1267,6 +1293,16 @@ void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 #endif /* defined(CONFIG_BT_USER_PHY_UPDATE) */
 
 	bt_conn_set_state(conn, BT_CONN_CONNECTED);
+
+	if (is_disconnected) {
+		/* Mark the connection as already disconnected before calling
+		 * the connected callback, so that the application cannot
+		 * start sending packets
+		 */
+		bt_conn_set_state(conn, BT_CONN_DISCONNECT_COMPLETE);
+	}
+
+	bt_conn_connected(conn);
 
 	/* Start auto-initiated procedures */
 	conn_auto_initiate(conn);
@@ -2630,7 +2666,7 @@ static int le_set_event_mask(void)
 	mask |= BT_EVT_MASK_LE_ADVERTISING_REPORT;
 
 	if (IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-	    BT_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
+	    BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
 		mask |= BT_EVT_MASK_LE_ADV_SET_TERMINATED;
 		mask |= BT_EVT_MASK_LE_SCAN_REQ_RECEIVED;
 		mask |= BT_EVT_MASK_LE_EXT_ADVERTISING_REPORT;
@@ -2647,7 +2683,7 @@ static int le_set_event_mask(void)
 		if ((IS_ENABLED(CONFIG_BT_SMP) &&
 		     BT_FEAT_LE_PRIVACY(bt_dev.le.features)) ||
 		    (IS_ENABLED(CONFIG_BT_EXT_ADV) &&
-		     BT_FEAT_LE_EXT_ADV(bt_dev.le.features))) {
+		     BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features))) {
 			/* C24:
 			 * Mandatory if the LE Controller supports Connection
 			 * State and either LE Feature (LL Privacy) or

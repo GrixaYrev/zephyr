@@ -42,7 +42,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME, CONFIG_OPENTHREAD_L2_LOG_LEVEL);
 #if defined(CONFIG_IEEE802154_2015)
 #define ACK_PKT_LENGTH 127
 #else
-#define ACK_PKT_LENGTH 3
+#define ACK_PKT_LENGTH 5
 #endif
 
 #define FRAME_TYPE_MASK 0x07
@@ -581,6 +581,7 @@ otError otPlatRadioReceive(otInstance *aInstance, uint8_t aChannel)
 	return OT_ERROR_NONE;
 }
 
+#if defined(CONFIG_OPENTHREAD_CSL_RECEIVER)
 otError otPlatRadioReceiveAt(otInstance *aInstance, uint8_t aChannel,
 			     uint32_t aStart, uint32_t aDuration)
 {
@@ -599,6 +600,7 @@ otError otPlatRadioReceiveAt(otInstance *aInstance, uint8_t aChannel,
 
 	return result ? OT_ERROR_FAILED : OT_ERROR_NONE;
 }
+#endif
 
 otError otPlatRadioTransmit(otInstance *aInstance, otRadioFrame *aPacket)
 {
@@ -990,7 +992,7 @@ otError otPlatRadioEnableCsl(otInstance *aInstance, uint32_t aCslPeriod,
 
 	struct ieee802154_config config = {
 		.csl_recv.period = aCslPeriod,
-		.csl_recv.addr = aExtAddr,
+		.csl_recv.addr = aExtAddr->m8,
 	};
 
 	result = radio_api->configure(radio_dev, IEEE802154_CONFIG_CSL_RECEIVER,
@@ -1018,7 +1020,7 @@ uint8_t otPlatRadioGetCslAccuracy(otInstance *aInstance)
 	return radio_api->get_csl_acc(radio_dev);
 }
 
-#if defined(CONFIG_OPENTHREAD_MLE_LINK_METRICS_ENABLE)
+#if defined(CONFIG_OPENTHREAD_LINK_METRICS)
 otError otPlatRadioConfigureEnhAckProbing(otInstance *aInstance, otLinkMetrics aLinkMetrics,
 					  const otShortAddress aShortAddress,
 					  const otExtAddress *aExtAddress)

@@ -16,7 +16,9 @@
 #include <app_memory/app_memdomain.h>
 #include <init.h>
 #include <sys/sem.h>
+#include <sys/mutex.h>
 #include <sys/mem_manage.h>
+#include <sys/time.h>
 
 #define LIBC_BSS	K_APP_BMEM(z_libc_partition)
 #define LIBC_DATA	K_APP_DMEM(z_libc_partition)
@@ -267,14 +269,10 @@ __weak void _exit(int status)
 	}
 }
 
-static LIBC_DATA SYS_SEM_DEFINE(heap_sem, 1, 1);
-
 void *_sbrk(intptr_t count)
 {
 	void *ret, *ptr;
 
-	/* coverity[CHECKED_RETURN] */
-	sys_sem_take(&heap_sem, K_FOREVER);
 	ptr = ((char *)HEAP_BASE) + heap_sz;
 
 	if ((heap_sz + count) < MAX_HEAP_SIZE) {
@@ -284,12 +282,21 @@ void *_sbrk(intptr_t count)
 		ret = (void *)-1;
 	}
 
-	/* coverity[CHECKED_RETURN] */
-	sys_sem_give(&heap_sem);
-
 	return ret;
 }
 __weak FUNC_ALIAS(_sbrk, sbrk, void *);
+
+static LIBC_DATA SYS_MUTEX_DEFINE(heap_mutex);
+
+void __malloc_lock(struct _reent *reent)
+{
+	sys_mutex_lock(&heap_mutex, K_FOREVER);
+}
+
+void __malloc_unlock(struct _reent *reent)
+{
+	sys_mutex_unlock(&heap_mutex);
+}
 
 __weak int *__errno(void)
 {
@@ -396,12 +403,7 @@ void *_sbrk_r(struct _reent *r, int count)
 }
 #endif /* CONFIG_XTENSA */
 
-struct timeval;
-
 int _gettimeofday(struct timeval *__tp, void *__tzp)
 {
-	ARG_UNUSED(__tp);
-	ARG_UNUSED(__tzp);
-
-	return -1;
+	return gettimeofday(__tp, __tzp);
 }

@@ -54,8 +54,8 @@ static void ticker_op_cb(uint32_t status, void *param);
 static void ticker_update_latency_cancel_op_cb(uint32_t ticker_status,
 					       void *param);
 
-void ull_slave_setup(memq_link_t *link, struct node_rx_hdr *rx,
-		     struct node_rx_ftr *ftr, struct lll_conn *lll)
+void ull_slave_setup(struct node_rx_hdr *rx, struct node_rx_ftr *ftr,
+		     struct lll_conn *lll)
 {
 	uint32_t conn_offset_us, conn_interval_us;
 	uint8_t ticker_id_adv, ticker_id_conn;
@@ -72,6 +72,7 @@ void ull_slave_setup(memq_link_t *link, struct node_rx_hdr *rx,
 	struct node_rx_cc *cc;
 	struct ll_conn *conn;
 	uint16_t win_offset;
+	memq_link_t *link;
 	uint16_t timeout;
 	uint8_t chan_sel;
 
@@ -98,6 +99,11 @@ void ull_slave_setup(memq_link_t *link, struct node_rx_hdr *rx,
 #endif /* CONFIG_BT_CTLR_PRIVACY */
 		memcpy(peer_id_addr, peer_addr, BDADDR_SIZE);
 	}
+
+	/* Use the link stored in the node rx to enqueue connection
+	 * complete node rx towards LL context.
+	 */
+	link = rx->link;
 
 #if defined(CONFIG_BT_CTLR_CHECK_SAME_PEER_CONN)
 	uint8_t own_addr_type = pdu_adv->rx_addr;
@@ -344,19 +350,18 @@ void ull_slave_setup(memq_link_t *link, struct node_rx_hdr *rx,
 
 	ticks_slot_offset = MAX(conn->ull.ticks_active_to_start,
 				conn->ull.ticks_prepare_to_start);
-
 	if (IS_ENABLED(CONFIG_BT_CTLR_LOW_LAT)) {
 		ticks_slot_overhead = ticks_slot_offset;
 	} else {
 		ticks_slot_overhead = 0U;
 	}
+	ticks_slot_offset += HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US);
 
 	conn_interval_us -= lll->slave.window_widening_periodic_us;
 
 	conn_offset_us = ftr->radio_end_us;
 	conn_offset_us += win_offset * CONN_INT_UNIT_US;
 	conn_offset_us += win_delay_us;
-	conn_offset_us -= EVENT_OVERHEAD_START_US;
 	conn_offset_us -= EVENT_TICKER_RES_MARGIN_US;
 	conn_offset_us -= EVENT_JITTER_US;
 	conn_offset_us -= ready_delay_us;

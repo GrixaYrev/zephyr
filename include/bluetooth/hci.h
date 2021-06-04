@@ -47,7 +47,9 @@ struct bt_hci_evt_hdr {
 #define BT_ACL_POINT_TO_POINT           0x00
 #define BT_ACL_BROADCAST                0x01
 
-#define bt_acl_handle(h)                ((h) & BIT_MASK(12))
+#define BT_ACL_HANDLE_MASK              BIT_MASK(12)
+
+#define bt_acl_handle(h)                ((h) & BT_ACL_HANDLE_MASK)
 #define bt_acl_flags(h)                 ((h) >> 12)
 #define bt_acl_flags_pb(f)              ((f) & BIT_MASK(2))
 #define bt_acl_flags_bc(f)              ((f) >> 2)
@@ -1533,6 +1535,11 @@ struct bt_hci_cp_le_set_cl_cte_sampling_enable {
 	uint8_t  max_sampled_cte;
 	uint8_t  switch_pattern_len;
 	uint8_t  ant_ids[0];
+} __packed;
+
+struct bt_hci_rp_le_set_cl_cte_sampling_enable {
+	uint8_t  status;
+	uint16_t sync_handle;
 } __packed;
 
 #define BT_HCI_LE_AOA_CTE_RSP                   BIT(0)
