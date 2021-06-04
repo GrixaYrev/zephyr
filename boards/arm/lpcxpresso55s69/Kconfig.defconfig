@@ -9,16 +9,6 @@ config BOARD
 	default "lpcxpresso55S69_cpu0" if BOARD_LPCXPRESSO55S69_CPU0
 	default "lpcxpresso55S69_cpu1" if BOARD_LPCXPRESSO55S69_CPU1
 
-if PINMUX_MCUX_LPC
-
-config PINMUX_MCUX_LPC_PORT0
-	default y
-
-config PINMUX_MCUX_LPC_PORT1
-	default y
-
-endif # PINMUX_MCUX_LPC
-
 if GPIO_MCUX_LPC
 
 config GPIO_MCUX_LPC_PORT0
@@ -28,10 +18,6 @@ config GPIO_MCUX_LPC_PORT1
 	default y
 
 endif # GPIO_MCUX_LPC
-
-config SPI_8
-	default y
-	depends on SPI
 
 config FXOS8700_DRDY_INT1
 	default y
@@ -66,9 +52,10 @@ config FLASH_LOAD_SIZE
 
 endif # TRUSTED_EXECUTION_NONSECURE || BOARD_LPCXPRESSO55S69_CPU1
 
-config TFM_PROFILE
-	default "profile_medium"
+choice TFM_PROFILE_TYPE
 	depends on BUILD_WITH_TFM
+	default TFM_PROFILE_TYPE_MEDIUM
+endchoice
 
 endif # BOARD_LPCXPRESSO55S69_CPU0 || BOARD_LPCXPRESSO55S69_CPU1
 

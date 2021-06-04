@@ -778,7 +778,7 @@ static int i2c_it8xxx2_init(const struct device *dev)
 	uint32_t bitrate_cfg, offset = 0;
 	int error;
 
-	k_sem_init(&data->device_sync_sem, 0, UINT_MAX);
+	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 
 	switch ((uint32_t)base) {
 	case DT_REG_ADDR(DT_NODELABEL(i2c0)):
@@ -874,7 +874,7 @@ static const struct i2c_driver_api i2c_it8xxx2_driver_api = {
 	static struct i2c_it8xxx2_data i2c_it8xxx2_data_##idx;	               \
 	\
 	DEVICE_DT_INST_DEFINE(idx,				               \
-			&i2c_it8xxx2_init, &device_pm_control_nop,             \
+			&i2c_it8xxx2_init, NULL,			       \
 			&i2c_it8xxx2_data_##idx,	                       \
 			&i2c_it8xxx2_cfg_##idx, POST_KERNEL,		       \
 			CONFIG_KERNEL_INIT_PRIORITY_DEVICE,                    \

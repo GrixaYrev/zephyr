@@ -15,14 +15,16 @@
 #define DT_DRV_COMPAT atmel_sam_afec
 #elif DT_HAS_COMPAT_STATUS_OKAY(atmel_sam0_adc)
 #define DT_DRV_COMPAT atmel_sam0_adc
+#elif DT_HAS_COMPAT_STATUS_OKAY(ite_it8xxx2_adc)
+#define DT_DRV_COMPAT ite_it8xxx2_adc
 #elif DT_HAS_COMPAT_STATUS_OKAY(microchip_xec_adc)
 #define DT_DRV_COMPAT microchip_xec_adc
 #elif DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_adc)
 #define DT_DRV_COMPAT nordic_nrf_adc
 #elif DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_saadc)
 #define DT_DRV_COMPAT nordic_nrf_saadc
-#elif DT_HAS_COMPAT_STATUS_OKAY(nxp_mcux_rtadc)
-#define DT_DRV_COMPAT nxp_mcux_rtadc
+#elif DT_HAS_COMPAT_STATUS_OKAY(nxp_mcux_12b1msps_sar)
+#define DT_DRV_COMPAT nxp_mcux_12b1msps_sar
 #elif DT_HAS_COMPAT_STATUS_OKAY(nxp_kinetis_adc12)
 #define DT_DRV_COMPAT nxp_kinetis_adc12
 #elif DT_HAS_COMPAT_STATUS_OKAY(nxp_kinetis_adc16)
@@ -33,6 +35,8 @@
 #define DT_DRV_COMPAT nuvoton_npcx_adc
 #elif DT_HAS_COMPAT_STATUS_OKAY(ti_cc32xx_adc)
 #define DT_DRV_COMPAT ti_cc32xx_adc
+#elif DT_HAS_COMPAT_STATUS_OKAY(zephyr_adc_emul)
+#define DT_DRV_COMPAT zephyr_adc_emul
 #else
 #error No known devicetree compatible match for ADC shell
 #endif

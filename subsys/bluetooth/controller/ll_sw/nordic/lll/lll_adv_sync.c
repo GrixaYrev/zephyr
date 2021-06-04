@@ -23,15 +23,16 @@
 #include "lll_vendor.h"
 #include "lll_clock.h"
 #include "lll_chan.h"
+#include "lll_adv_types.h"
 #include "lll_adv.h"
+#include "lll_adv_pdu.h"
 #include "lll_adv_sync.h"
+#include "lll_df_types.h"
 
 #include "lll_internal.h"
 #include "lll_adv_internal.h"
 #include "lll_tim_internal.h"
-#if IS_ENABLED(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
 #include "lll_df_internal.h"
-#endif /* CONFIG_BT_CTLR_DF_ADV_CTE_TX */
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
 #define LOG_MODULE_NAME bt_ctlr_lll_adv_sync
@@ -40,6 +41,7 @@
 
 static int init_reset(void);
 static int prepare_cb(struct lll_prepare_param *p);
+static void abort_cb(struct lll_prepare_param *prepare_param, void *param);
 static void isr_done(void *param);
 
 int lll_adv_sync_init(void)
@@ -68,26 +70,13 @@ int lll_adv_sync_reset(void)
 
 void lll_adv_sync_prepare(void *param)
 {
-	struct lll_prepare_param *p;
-	struct lll_adv_sync *lll;
-	uint16_t elapsed;
 	int err;
 
 	err = lll_hfclock_on();
 	LL_ASSERT(err >= 0);
 
-	p = param;
-
-	/* Instants elapsed */
-	elapsed = p->lazy + 1;
-
-	lll = p->param;
-
-	/* Save the (latency + 1) for use in event */
-	lll->latency_prepare += elapsed;
-
 	/* Invoke common pipeline handling of prepare */
-	err = lll_prepare(lll_is_abort_cb, lll_abort_cb, prepare_cb, 0, p);
+	err = lll_prepare(lll_is_abort_cb, abort_cb, prepare_cb, 0, param);
 	LL_ASSERT(!err || err == -EINPROGRESS);
 }
 
@@ -98,7 +87,7 @@ static int init_reset(void)
 
 static int prepare_cb(struct lll_prepare_param *p)
 {
-#if IS_ENABLED(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
+#if defined(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
 	struct lll_df_adv_cfg *df_cfg;
 #endif /* CONFIG_BT_CTLR_DF_ADV_CTE_TX */
 	struct lll_adv_sync *lll;
@@ -107,7 +96,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	uint16_t event_counter;
 	uint8_t data_chan_use;
 	struct pdu_adv *pdu;
-	struct evt_hdr *evt;
+	struct ull_hdr *ull;
 	uint32_t remainder;
 	uint32_t start_us;
 	void *extra_data;
@@ -118,14 +107,14 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 	lll = p->param;
 
-	/* Deduce the latency */
-	lll->latency_event = lll->latency_prepare - 1;
+	/* Calculate the current event latency */
+	lll->latency_event = lll->latency_prepare + p->lazy;
 
 	/* Calculate the current event counter value */
 	event_counter = lll->event_counter + lll->latency_event;
 
 	/* Update event counter to next value */
-	lll->event_counter = lll->event_counter + lll->latency_prepare;
+	lll->event_counter = (event_counter + 1);
 
 	/* Reset accumulated latencies */
 	lll->latency_prepare = 0;
@@ -158,7 +147,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	pdu = lll_adv_sync_data_latest_get(lll, &extra_data, &upd);
 	LL_ASSERT(pdu);
 
-#if IS_ENABLED(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
+#if defined(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
 	if (extra_data) {
 		df_cfg = (struct lll_df_adv_cfg *)extra_data;
 		lll_df_conf_cte_tx_enable(df_cfg->cte_type, df_cfg->cte_length,
@@ -173,10 +162,9 @@ static int prepare_cb(struct lll_prepare_param *p)
 	radio_pkt_tx_set(pdu);
 
 	/* TODO: chaining */
-	radio_isr_set(lll_isr_done, lll);
 	radio_isr_set(isr_done, lll);
 
-#if IS_ENABLED(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
+#if defined(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
 	if (df_cfg) {
 		radio_switch_complete_and_phy_end_disable();
 	} else
@@ -186,8 +174,8 @@ static int prepare_cb(struct lll_prepare_param *p)
 	}
 
 	ticks_at_event = p->ticks_at_expire;
-	evt = HDR_LLL2EVT(lll);
-	ticks_at_event += lll_evt_offset_get(evt);
+	ull = HDR_LLL2ULL(lll);
+	ticks_at_event += lll_event_offset_get(ull);
 
 	ticks_at_start = ticks_at_event;
 	ticks_at_start += HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US);
@@ -207,7 +195,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 #if defined(CONFIG_BT_CTLR_XTAL_ADVANCED) && \
 	(EVENT_OVERHEAD_PREEMPT_US <= EVENT_OVERHEAD_PREEMPT_MIN_US)
 	/* check if preempt to start has changed */
-	if (lll_preempt_calc(evt, (TICKER_ID_ADV_SYNC_BASE +
+	if (lll_preempt_calc(ull, (TICKER_ID_ADV_SYNC_BASE +
 				   ull_adv_sync_lll_handle_get(lll)),
 			     ticks_at_event)) {
 		radio_isr_set(lll_isr_abort, lll);
@@ -226,12 +214,41 @@ static int prepare_cb(struct lll_prepare_param *p)
 	return 0;
 }
 
+static void abort_cb(struct lll_prepare_param *prepare_param, void *param)
+{
+	struct lll_adv_sync *lll;
+	int err;
+
+	/* NOTE: This is not a prepare being cancelled */
+	if (!prepare_param) {
+		/* Perform event abort here.
+		 * After event has been cleanly aborted, clean up resources
+		 * and dispatch event done.
+		 */
+		radio_isr_set(isr_done, param);
+		radio_disable();
+		return;
+	}
+
+	/* NOTE: Else clean the top half preparations of the aborted event
+	 * currently in preparation pipeline.
+	 */
+	err = lll_hfclock_off();
+	LL_ASSERT(err >= 0);
+
+	/* Accumulate the latency as event is aborted while being in pipeline */
+	lll = prepare_param->param;
+	lll->latency_prepare += (prepare_param->lazy + 1);
+
+	lll_done(param);
+}
+
 static void isr_done(void *param)
 {
 	struct lll_adv_sync *lll;
 
 	lll = param;
-#if IS_ENABLED(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
+#if defined(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
 	if (lll->cte_started) {
 		lll_df_conf_cte_tx_disable();
 	}

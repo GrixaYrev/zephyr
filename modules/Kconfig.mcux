@@ -10,10 +10,10 @@ config HAS_MCUX
 
 if HAS_MCUX
 
-config HAS_MCUX_RTADC
+config HAS_MCUX_12B1MSPS_SAR
 	bool
 	help
-	  Set if the ADC module is present in the RT series SoC.
+	  Set if the 12B1MSPS SAR ADC module is present in the SoC.
 
 config HAS_MCUX_ADC12
 	bool
@@ -250,6 +250,11 @@ config HAS_MCUX_PIT
 	bool
 	help
 	  Set if the PIT module is present on the SoC.
+
+config HAS_MCUX_OS_TIMER
+	bool
+	help
+	  Set if the OS timer is used as a kernel timer on the SoC.
 
 config HAS_MCUX_ACMP
 	bool

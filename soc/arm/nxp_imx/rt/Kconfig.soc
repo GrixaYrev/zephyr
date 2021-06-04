@@ -11,6 +11,7 @@ config SOC_MIMXRT1011
 	bool "SOC_MIMXRT1011"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_FLEXSPI
 	select HAS_MCUX_IGPIO
@@ -32,6 +33,7 @@ config SOC_MIMXRT1015
 	bool "SOC_MIMXRT1015"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_FLEXSPI
 	select HAS_MCUX_IGPIO
@@ -54,6 +56,7 @@ config SOC_MIMXRT1021
 	bool "SOC_MIMXRT1021"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_ENET
 	select HAS_MCUX_FLEXSPI
@@ -79,6 +82,7 @@ config SOC_MIMXRT1024
 	bool "SOC_MIMXRT1024"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_ENET
 	select HAS_MCUX_IGPIO
@@ -103,6 +107,7 @@ config SOC_MIMXRT1051
 	bool "SOC_MIMXRT1051"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_ENET
 	select HAS_MCUX_FLEXSPI
@@ -129,7 +134,7 @@ config SOC_MIMXRT1052
 	bool "SOC_MIMXRT1052"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
-	select HAS_MCUX_RTADC	
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_ELCDIF
 	select HAS_MCUX_ENET
@@ -160,6 +165,7 @@ config SOC_MIMXRT1061
 	bool "SOC_MIMXRT1061"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_ENET
 	select HAS_MCUX_FLEXSPI
@@ -186,6 +192,7 @@ config SOC_MIMXRT1062
 	bool "SOC_MIMXRT1062"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_ELCDIF
 	select HAS_MCUX_ENET
@@ -216,6 +223,7 @@ config SOC_MIMXRT1064
 	bool "SOC_MIMXRT1064"
 	select HAS_MCUX
 	select HAS_MCUX_CACHE
+	select HAS_MCUX_12B1MSPS_SAR
 	select HAS_MCUX_CCM
 	select HAS_MCUX_ELCDIF
 	select HAS_MCUX_ENET
@@ -386,6 +394,7 @@ config IPG_DIV
 
 menuconfig NXP_IMX_RT_BOOT_HEADER
 	bool "Enable the boot header"
+	depends on !BOOTLOADER_MCUBOOT
 	help
 	  Enable data structures required by the boot ROM to boot the
 	  application from an external flash device.
@@ -449,11 +458,11 @@ config CODE_ITCM
 
 config CODE_FLEXSPI
 	bool "Link code into external FlexSPI-controlled memory"
-	select NXP_IMX_RT_BOOT_HEADER
+	select NXP_IMX_RT_BOOT_HEADER if !BOOTLOADER_MCUBOOT
 
 config CODE_FLEXSPI2
 	bool "Link code into internal FlexSPI-controlled memory"
-	select NXP_IMX_RT_BOOT_HEADER
+	select NXP_IMX_RT_BOOT_HEADER if !BOOTLOADER_MCUBOOT
 
 endchoice
 

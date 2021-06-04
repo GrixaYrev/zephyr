@@ -185,6 +185,25 @@ void arch_switch_to_main_thread(struct k_thread *main_thread, char *stack_ptr,
  * @retval -EINVAL If the floating point disabling could not be performed.
  */
 int arch_float_disable(struct k_thread *thread);
+
+/**
+ * @brief Enable floating point context preservation
+ *
+ * The function is used to enable the preservation of floating
+ * point context information for a particular thread.
+ * This API depends on each architecture implimentation. If the architecture
+ * does not support enableing, this API will always be failed.
+ *
+ * The @a options parameter indicates which floating point register sets will
+ * be used by the specified thread. Currently it is used by x86 only.
+ *
+ * @param thread  ID of thread.
+ * @param options architecture dependent options
+ *
+ * @retval 0       On success.
+ * @retval -EINVAL If the floating point enabling could not be performed.
+ */
+int arch_float_enable(struct k_thread *thread, unsigned int options);
 #endif /* CONFIG_FPU && CONFIG_FPU_SHARING */
 
 /** @} */
@@ -256,12 +275,12 @@ static inline bool arch_is_in_isr(void);
  * This API is part of infrastructure still under development and may
  * change.
  *
- * @param dest Page-aligned Destination virtual address to map
- * @param addr Page-aligned Source physical address to map
+ * @param virt Page-aligned Destination virtual address to map
+ * @param phys Page-aligned Source physical address to map
  * @param size Page-aligned size of the mapped memory region in bytes
  * @param flags Caching, access and control flags, see K_MAP_* macros
  */
-void arch_mem_map(void *dest, uintptr_t addr, size_t size, uint32_t flags);
+void arch_mem_map(void *virt, uintptr_t phys, size_t size, uint32_t flags);
 
 /**
  * Remove mappings for a provided virtual address range
@@ -290,6 +309,29 @@ void arch_mem_map(void *dest, uintptr_t addr, size_t size, uint32_t flags);
  * @param size Page-aligned region size
  */
 void arch_mem_unmap(void *addr, size_t size);
+
+/**
+ * Get the mapped physical memory address from virtual address.
+ *
+ * The function only needs to query the current set of page tables as
+ * the information it reports must be common to all of them if multiple
+ * page tables are in use. If multiple page tables are active it is unnecessary
+ * to iterate over all of them.
+ *
+ * Unless otherwise specified, virtual pages have the same mappings
+ * across all page tables. Calling this function on data pages that are
+ * exceptions to this rule (such as the scratch page) is undefined behavior.
+ * Just check the currently installed page tables and return the information
+ * in that.
+ *
+ * @param virt Page-aligned virtual address
+ * @param[out] phys Mapped physical address (can be NULL if only checking
+ *                  if virtual address is mapped)
+ *
+ * @retval 0 if mapping is found and valid
+ * @retval -EFAULT if virtual address is not mapped
+ */
+int arch_page_phys_get(void *virt, uintptr_t *phys);
 
 #ifdef CONFIG_ARCH_HAS_RESERVED_PAGE_FRAMES
 /**

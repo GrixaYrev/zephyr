@@ -183,7 +183,7 @@ static int mcux_flexcomm_init(const struct device *dev)
 	i2c_master_config_t master_config;
 	int error;
 
-	k_sem_init(&data->device_sync_sem, 0, UINT_MAX);
+	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 
 	/* Get the clock frequency */
 	if (clock_control_get_rate(config->clock_dev, config->clock_subsys,
@@ -227,7 +227,7 @@ static const struct i2c_driver_api mcux_flexcomm_driver_api = {
 	static struct mcux_flexcomm_data mcux_flexcomm_data_##id;	\
 	DEVICE_DT_INST_DEFINE(id,					\
 			    &mcux_flexcomm_init,			\
-			    device_pm_control_nop,			\
+			    NULL,					\
 			    &mcux_flexcomm_data_##id,			\
 			    &mcux_flexcomm_config_##id,			\
 			    POST_KERNEL,				\

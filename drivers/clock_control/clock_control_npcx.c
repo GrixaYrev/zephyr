@@ -39,7 +39,7 @@ static inline int npcx_clock_control_on(const struct device *dev,
 	struct npcx_clk_cfg *clk_cfg = (struct npcx_clk_cfg *)(sub_system);
 	const uint32_t pmc_base = DRV_CONFIG(dev)->base_pmc;
 
-	if (clk_cfg->ctrl >= NPCX_PWDWN_CTL_COUNT || clk_cfg->bit >= 8)
+	if (clk_cfg->ctrl >= NPCX_PWDWN_CTL_COUNT)
 		return -EINVAL;
 
 	/* Clear related PD (Power-Down) bit of module to turn on clock */
@@ -54,7 +54,7 @@ static inline int npcx_clock_control_off(const struct device *dev,
 	struct npcx_clk_cfg *clk_cfg = (struct npcx_clk_cfg *)(sub_system);
 	const uint32_t pmc_base = DRV_CONFIG(dev)->base_pmc;
 
-	if (clk_cfg->ctrl >= NPCX_PWDWN_CTL_COUNT || clk_cfg->bit >= 8)
+	if (clk_cfg->ctrl >= NPCX_PWDWN_CTL_COUNT)
 		return -EINVAL;
 
 	/* Set related PD (Power-Down) bit of module to turn off clock */
@@ -95,7 +95,7 @@ static int npcx_clock_control_get_subsys_rate(const struct device *dev,
 		*rate = 0U;
 		/* Invalid parameters */
 		return -EINVAL;
-	};
+	}
 
 	return 0;
 }
@@ -137,6 +137,31 @@ static struct clock_control_driver_api npcx_clock_control_api = {
 	.off = npcx_clock_control_off,
 	.get_rate = npcx_clock_control_get_subsys_rate,
 };
+
+/* valid clock frequency check */
+BUILD_ASSERT(CORE_CLK <= 100000000 &&
+	     CORE_CLK >= 4000000 &&
+	     OSC_CLK % CORE_CLK == 0 &&
+	     OSC_CLK / CORE_CLK <= 10,
+	     "Invalid CORE_CLK setting");
+BUILD_ASSERT(CORE_CLK / (FIUDIV_VAL + 1) <= 50000000 &&
+	     CORE_CLK / (FIUDIV_VAL + 1) >= 4000000,
+	     "Invalid FIUCLK setting");
+BUILD_ASSERT(CORE_CLK / (AHB6DIV_VAL + 1) <= 50000000 &&
+	     CORE_CLK / (AHB6DIV_VAL + 1) >= 4000000,
+	     "Invalid AHB6_CLK setting");
+BUILD_ASSERT(APBSRC_CLK / (APB1DIV_VAL + 1) <= 50000000 &&
+	     APBSRC_CLK / (APB1DIV_VAL + 1) >= 4000000 &&
+	     (APB1DIV_VAL + 1) % (FPRED_VAL + 1) == 0,
+	     "Invalid APB1_CLK setting");
+BUILD_ASSERT(APBSRC_CLK / (APB2DIV_VAL + 1) <= 50000000 &&
+	     APBSRC_CLK / (APB2DIV_VAL + 1) >= 8000000 &&
+	     (APB2DIV_VAL + 1) % (FPRED_VAL + 1) == 0,
+	     "Invalid APB2_CLK setting");
+BUILD_ASSERT(APBSRC_CLK / (APB3DIV_VAL + 1) <= 50000000 &&
+	     APBSRC_CLK / (APB3DIV_VAL + 1) >= 12500000 &&
+	     (APB3DIV_VAL + 1) % (FPRED_VAL + 1) == 0,
+	     "Invalid APB3_CLK setting");
 
 static int npcx_clock_control_init(const struct device *dev)
 {
@@ -193,7 +218,7 @@ const struct npcx_pcc_config pcc_config = {
 
 DEVICE_DT_INST_DEFINE(0,
 		    &npcx_clock_control_init,
-		    device_pm_control_nop,
+		    NULL,
 		    NULL, &pcc_config,
 		    PRE_KERNEL_1,
 		    CONFIG_KERNEL_INIT_PRIORITY_OBJECTS,

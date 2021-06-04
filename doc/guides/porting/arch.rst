@@ -412,6 +412,10 @@ expected to be implemented as part of an architecture port.
 
 * Atomic operators.
 
+  * If instructions do exist for a given architecture, the implementation is
+    configured using the :option:`CONFIG_ATOMIC_OPERATIONS_ARCH` Kconfig
+    option.
+
   * If instructions do not exist for a given architecture,
     a generic version that wraps :c:func:`irq_lock` or :c:func:`irq_unlock`
     around non-atomic operations exists. It is configured using the
@@ -823,8 +827,6 @@ on MMU systems and uncommon on MPU systems:
 * :c:func:`arch_mem_domain_partition_add`
 
 * :c:func:`arch_mem_domain_partition_remove`
-
-* :c:func:`arch_mem_domain_destroy`
 
 Please see the doxygen documentation of these APIs for details.
 

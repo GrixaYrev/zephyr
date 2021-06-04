@@ -112,7 +112,7 @@ static void help_item_print(const struct shell *shell, const char *item_name,
 	static const uint8_t tabulator[] = "  ";
 	const uint16_t offset = 2 * strlen(tabulator) + item_name_width + 1;
 
-	if (item_name == NULL) {
+	if ((item_name == NULL) || (item_name[0] == '\0')) {
 		return;
 	}
 
@@ -156,7 +156,7 @@ void z_shell_help_subcmd_print(const struct shell *shell,
 	/* Searching for the longest subcommand to print. */
 	while ((entry = z_shell_cmd_get(parent, idx++, &dloc)) != NULL) {
 		longest = Z_MAX(longest, z_shell_strlen(entry->syntax));
-	};
+	}
 
 	/* No help to print */
 	if (longest == 0) {
@@ -186,4 +186,17 @@ void z_shell_help_cmd_print(const struct shell *shell,
 	z_shell_fprintf(shell, SHELL_NORMAL, "%s%s", cmd->syntax, cmd_sep);
 
 	formatted_text_print(shell, cmd->help, field_width, false);
+}
+
+bool z_shell_help_request(const char *str)
+{
+	if (!IS_ENABLED(CONFIG_SHELL_HELP_OPT_PARSE)) {
+		return false;
+	}
+
+	if (!strcmp(str, "-h") || !strcmp(str, "--help")) {
+		return true;
+	}
+
+	return false;
 }

@@ -22,14 +22,15 @@ struct lll_conn_iso_stream_rxtx {
 };
 
 struct lll_conn_iso_stream {
-	/* Link to ACL connection (for encryption, channel map, crc init) */
-	struct lll_conn *conn;
+	uint16_t acl_handle;        /* ACL connection handle (for encryption,
+				     * channel map, crc init)
+				     */
+	uint16_t handle;            /* CIS handle */
 
 	/* Connection parameters */
 	uint8_t  access_addr[4];    /* Access address */
 	uint32_t offset;            /* Offset of CIS from start of CIG in us */
 	uint32_t sub_interval;      /* Interval between subevents in us */
-	uint32_t subevent_length;   /* Length of subevent in us */
 	uint8_t  num_subevents;     /* Number of subevents */
 	struct lll_conn_iso_stream_rxtx rx; /* RX parameters */
 	struct lll_conn_iso_stream_rxtx tx; /* TX parameters */
@@ -55,17 +56,20 @@ struct lll_conn_iso_stream {
 struct lll_conn_iso_group {
 	struct lll_hdr hdr;
 
-	uint8_t  num_cis;  /* Number of CISes in this CIG */
+	uint16_t handle;        /* CIG handle (internal) */
+	uint8_t  num_cis : 5;   /* Number of CISes in this CIG */
+	uint8_t  role : 1;      /* 0: CENTRAL, 1: PERIPHERAL*/
+	uint8_t  paused : 1;    /* 1: CIG is paused */
 #if defined(CONFIG_BT_CTLR_CONN_ISO_STREAMS_PER_GROUP)
-	struct lll_conn_iso_stream *streams
-				[CONFIG_BT_CTLR_CONN_ISO_STREAMS_PER_GROUP];
+	uint16_t cis_handles[CONFIG_BT_CTLR_CONN_ISO_STREAMS_PER_GROUP];
 #endif /* CONFIG_BT_CTLR_CONN_ISO_STREAMS */
 
 	/* Resumption information */
-	uint8_t  next_cis;  /* Next CIS to schedule */
-	uint32_t next_time; /* When to trigger next activity in the CIG */
+	uint8_t  resume_cis;    /* CIS index to schedule at resume */
 };
 
 int lll_conn_iso_init(void);
 int lll_conn_iso_reset(void);
+void lll_conn_iso_done(struct lll_conn_iso_group *cig, uint8_t trx_cnt,
+		       uint16_t prog_to_anchor_us, uint8_t mic_state);
 void lll_conn_iso_flush(uint16_t handle, struct lll_conn_iso_stream *lll);

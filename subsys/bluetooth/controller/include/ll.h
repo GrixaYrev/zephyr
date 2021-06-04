@@ -12,6 +12,9 @@
 int ll_init(struct k_sem *sem_rx);
 void ll_reset(void);
 
+uint8_t ll_set_host_feature(uint8_t bit_number, uint8_t bit_value);
+uint64_t ll_feat_get(void);
+
 uint8_t *ll_addr_get(uint8_t addr_type, uint8_t *p_bdaddr);
 uint8_t ll_addr_set(uint8_t addr_type, uint8_t const *const p_bdaddr);
 
@@ -189,7 +192,6 @@ uint8_t ll_read_iso_link_quality(uint16_t  handle,
 				 uint32_t *crc_error_packets,
 				 uint32_t *rx_unreceived_packets,
 				 uint32_t *duplicate_packets);
-uint8_t ll_set_host_feature(uint8_t bit_number, uint8_t bit_value);
 uint8_t ll_setup_iso_path(uint16_t handle, uint8_t path_dir, uint8_t path_id,
 			  uint8_t coding_format, uint16_t company_id,
 			  uint16_t vs_codec_id, uint32_t controller_delay,
@@ -288,6 +290,13 @@ uint8_t ll_df_set_cl_cte_tx_enable(uint8_t adv_handle, uint8_t cte_enable);
 uint8_t ll_df_set_conn_cte_tx_params(uint16_t handle, uint8_t cte_types,
 				     uint8_t switching_patterns_len,
 				     uint8_t *ant_id);
+/* Enables or disables CTE sampling in periodic advertising scan */
+uint8_t ll_df_set_cl_iq_sampling_enable(uint16_t handle,
+					uint8_t sampling_enable,
+					uint8_t slot_durations,
+					uint8_t max_cte_count,
+					uint8_t switch_pattern_len,
+					uint8_t *ant_ids);
 /* Sets CTE transmission parameters for a connection */
 void ll_df_read_ant_inf(uint8_t *switch_sample_rates,
 			uint8_t *num_ant,
@@ -310,6 +319,7 @@ void ll_iso_tx_mem_release(void *tx);
 int ll_iso_tx_mem_enqueue(uint16_t handle, void *tx);
 
 /* External co-operation */
-void ll_timeslice_ticker_id_get(uint8_t * const instance_index, uint8_t * const user_id);
+void ll_timeslice_ticker_id_get(uint8_t * const instance_index,
+				uint8_t * const ticker_id);
 void ll_radio_state_abort(void);
 uint32_t ll_radio_state_is_idle(void);

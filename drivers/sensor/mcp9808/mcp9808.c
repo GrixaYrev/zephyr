@@ -132,14 +132,14 @@ static struct mcp9808_data mcp9808_data;
 static const struct mcp9808_config mcp9808_cfg = {
 	.i2c_bus = DT_INST_BUS_LABEL(0),
 	.i2c_addr = DT_INST_REG_ADDR(0),
+	.resolution = DT_INST_PROP(0, resolution),
 #ifdef CONFIG_MCP9808_TRIGGER
 	.alert_pin = DT_INST_GPIO_PIN(0, int_gpios),
 	.alert_flags = DT_INST_GPIO_FLAGS(0, int_gpios),
 	.alert_controller = DT_INST_GPIO_LABEL(0, int_gpios),
-	.resolution = DT_INST_PROP(0, resolution),
 #endif /* CONFIG_MCP9808_TRIGGER */
 };
 
-DEVICE_DT_INST_DEFINE(0, mcp9808_init, device_pm_control_nop,
+DEVICE_DT_INST_DEFINE(0, mcp9808_init, NULL,
 		      &mcp9808_data, &mcp9808_cfg, POST_KERNEL,
 		      CONFIG_SENSOR_INIT_PRIORITY, &mcp9808_api_funcs);

@@ -127,13 +127,8 @@ static inline int eeprom_emu_flash_write(const struct device *dev, off_t offset,
 	const struct eeprom_emu_config *dev_config = DEV_CONFIG(dev);
 	int rc;
 
-	if (flash_write_protection_set(dev_config->flash_dev, false)) {
-		return -EIO;
-	}
-
 	rc = flash_write(dev_config->flash_dev, dev_config->flash_offset +
 			 offset, blk, len);
-	(void)flash_write_protection_set(dev_config->flash_dev, true);
 	return rc;
 }
 
@@ -147,13 +142,8 @@ static inline int eeprom_emu_flash_erase(const struct device *dev, off_t offset,
 	const struct eeprom_emu_config *dev_config = DEV_CONFIG(dev);
 	int rc;
 
-	if (flash_write_protection_set(dev_config->flash_dev, false)) {
-		return -EIO;
-	}
-
 	rc = flash_erase(dev_config->flash_dev, dev_config->flash_offset +
 			 offset, len);
-	(void)flash_write_protection_set(dev_config->flash_dev, true);
 	return rc;
 }
 
@@ -818,7 +808,7 @@ static const struct eeprom_driver_api eeprom_emu_api = {
 	}; \
 	static struct eeprom_emu_data eeprom_emu_##n##_data; \
 	DEVICE_DT_INST_DEFINE(n, &eeprom_emu_init, \
-		device_pm_control_nop, &eeprom_emu_##n##_data, \
+		NULL, &eeprom_emu_##n##_data, \
 		&eeprom_emu_##n##_config, POST_KERNEL, \
 		CONFIG_EEPROM_EMULATOR_INIT_PRIORITY, &eeprom_emu_api); \
 

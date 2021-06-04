@@ -17,7 +17,7 @@ static gpio_pin_config_t enet_gpio_config = {
 };
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc1), okay) && CONFIG_DISK_ACCESS_USDHC1
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc1), okay) && CONFIG_DISK_DRIVER_SDMMC
 
 /*Drive Strength Field: R0(260 Ohm @ 3.3V, 150 Ohm@1.8V, 240 Ohm for DDR)
  *Speed Field: medium(100MHz)
@@ -310,9 +310,18 @@ static int mimxrt1050_evk_init(const struct device *dev)
 	GPIO_PinInit(GPIO2, 31, &config);
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc1), okay) && CONFIG_DISK_ACCESS_USDHC1
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc1), okay) && CONFIG_DISK_DRIVER_SDMMC
 	mimxrt1050_evk_usdhc_pinmux(0, true, 2, 1);
 	imxrt_usdhc_pinmux_cb_register(mimxrt1050_evk_usdhc_pinmux);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(adc1), okay) && CONFIG_ADC
+	/* ADC1 Input 0 */
+	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B1_11_GPIO1_IO27, 0U);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B1_11_GPIO1_IO27, 0xB0u);
+	/* ADC1 Input 1 */
+	IOMUXC_SetPinMux(IOMUXC_GPIO_AD_B0_12_GPIO1_IO12, 0U);
+	IOMUXC_SetPinConfig(IOMUXC_GPIO_AD_B0_12_GPIO1_IO12, 0xB0u);
 #endif
 
 	return 0;

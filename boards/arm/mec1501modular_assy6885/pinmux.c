@@ -32,6 +32,7 @@ struct pinmux_ports_t {
 #endif
 };
 
+#ifdef CONFIG_I2C_XEC
 static void i2c_pinmux(struct pinmux_ports_t *p, uint8_t port_sel)
 {
 	switch (port_sel) {
@@ -97,6 +98,7 @@ static void i2c_pinmux(struct pinmux_ports_t *p, uint8_t port_sel)
 		break;
 	}
 }
+#endif
 
 static void configure_debug_interface(void)
 {
@@ -395,28 +397,28 @@ static int board_pinmux_init(const struct device *dev)
 
 	/* KSCAN KSI00 */
 	pinmux_pin_set(porta, MCHP_GPIO_017,
-		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_BUFT_OPENDRAIN);
+		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_PUD_PU);
 	/* KSCAN KSI01 */
 	pinmux_pin_set(porta, MCHP_GPIO_020,
-		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_BUFT_OPENDRAIN);
+		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_PUD_PU);
 	/* KSCAN KSI02 */
 	pinmux_pin_set(porta, MCHP_GPIO_021,
-		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_BUFT_OPENDRAIN);
+		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_PUD_PU);
 	/* KSCAN KSI03 */
 	pinmux_pin_set(porta, MCHP_GPIO_026,
-		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_BUFT_OPENDRAIN);
+		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_PUD_PU);
 	/* KSCAN KSI04 */
 	pinmux_pin_set(porta, MCHP_GPIO_027,
-		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_BUFT_OPENDRAIN);
+		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_PUD_PU);
 	/* KSCAN KSI05 */
 	pinmux_pin_set(porta, MCHP_GPIO_030,
-		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_BUFT_OPENDRAIN);
+		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_PUD_PU);
 	/* KSCAN KSI06 */
 	pinmux_pin_set(porta, MCHP_GPIO_031,
-		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_BUFT_OPENDRAIN);
+		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_PUD_PU);
 	/* KSCAN KSI07 */
 	pinmux_pin_set(porta, MCHP_GPIO_032,
-		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_BUFT_OPENDRAIN);
+		       MCHP_GPIO_CTRL_MUX_F1 | MCHP_GPIO_CTRL_PUD_PU);
 #endif /* CONFIG_KSCAN_XEC */
 
 #ifdef CONFIG_PECI_XEC

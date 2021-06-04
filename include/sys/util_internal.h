@@ -93,6 +93,7 @@
 #define UTIL_BOOL(x) UTIL_COMPL(UTIL_NOT(x))
 
 #define UTIL_EVAL(...) __VA_ARGS__
+#define UTIL_EXPAND(...) __VA_ARGS__
 #define UTIL_REPEAT(...) UTIL_LISTIFY(__VA_ARGS__)
 
 /* Implementation details for NUM_VA_ARGS_LESS_1 */

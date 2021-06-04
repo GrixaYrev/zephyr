@@ -147,6 +147,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${AUTOCONF_H})
 include(CheckCCompilerFlag)
 include(CheckCXXCompilerFlag)
 include(${ZEPHYR_BASE}/cmake/extensions.cmake)
+include(${ZEPHYR_BASE}/cmake/git.cmake)
 include(${ZEPHYR_BASE}/cmake/version.cmake)  # depends on hex.cmake
 
 #
@@ -155,7 +156,6 @@ include(${ZEPHYR_BASE}/cmake/version.cmake)  # depends on hex.cmake
 
 include(${ZEPHYR_BASE}/cmake/python.cmake)
 include(${ZEPHYR_BASE}/cmake/west.cmake)
-include(${ZEPHYR_BASE}/cmake/git.cmake)  # depends on version.cmake
 include(${ZEPHYR_BASE}/cmake/ccache.cmake)
 
 if(ZEPHYR_EXTRA_MODULES)
@@ -241,7 +241,18 @@ if(${BOARD}_DEPRECATED)
   message(WARNING "Deprecated BOARD=${BOARD_DEPRECATED} name specified, board automatically changed to: ${BOARD}.")
 endif()
 
+zephyr_boilerplate_watch(BOARD)
+
 foreach(root ${BOARD_ROOT})
+  # Check that the board root looks reasonable.
+  if(NOT IS_DIRECTORY "${root}/boards")
+    message(WARNING "BOARD_ROOT element without a 'boards' subdirectory:
+${root}
+Hints:
+  - if your board directory is '/foo/bar/boards/<ARCH>/my_board' then add '/foo/bar' to BOARD_ROOT, not the entire board directory
+  - if in doubt, use absolute paths")
+  endif()
+
   # NB: find_path will return immediately if the output variable is
   # already set
   if (BOARD_ALIAS)
@@ -283,7 +294,7 @@ if(DEFINED BOARD_REVISION)
 endif()
 
 # Check that SHIELD has not changed.
-zephyr_check_cache(SHIELD)
+zephyr_check_cache(SHIELD WATCH)
 
 if(SHIELD)
   set(BOARD_MESSAGE "${BOARD_MESSAGE}, Shield(s): ${SHIELD}")
@@ -349,7 +360,7 @@ foreach(root ${BOARD_ROOT})
         )
 
       # search for shield/shield.conf file
-      if(EXISTS ${shield_dir}/${s_dir}/${s}.conf)
+      if(EXISTS ${SHIELD_DIR_${s}}/${s}.conf)
         # add shield.conf to the shield config list
         list(APPEND
           shield_conf_files
@@ -483,6 +494,9 @@ unset(CONF_FILE CACHE)
 
 zephyr_file(CONF_FILES ${APPLICATION_SOURCE_DIR}/boards DTS APP_BOARD_DTS)
 
+# The CONF_FILE variable is now set to its final value.
+zephyr_boilerplate_watch(CONF_FILE)
+
 if(DTC_OVERLAY_FILE)
   # DTC_OVERLAY_FILE has either been specified on the cmake CLI or is already
   # in the CMakeCache.txt. This has precedence over the environment
@@ -520,6 +534,9 @@ include(${ZEPHYR_BASE}/cmake/host-tools.cmake)
 # Include board specific device-tree flags before parsing.
 include(${BOARD_DIR}/pre_dt_board.cmake OPTIONAL)
 
+# The DTC_OVERLAY_FILE variable is now set to its final value.
+zephyr_boilerplate_watch(DTC_OVERLAY_FILE)
+
 # DTS should be close to kconfig because CONFIG_ variables from
 # kconfig and dts should be available at the same time.
 #
@@ -551,6 +568,15 @@ endif()
 # Use SOC to search for a 'CMakeLists.txt' file.
 # e.g. zephyr/soc/xtense/intel_apl_adsp/CMakeLists.txt.
 foreach(root ${SOC_ROOT})
+  # Check that the root looks reasonable.
+  if(NOT IS_DIRECTORY "${root}/soc")
+    message(WARNING "SOC_ROOT element without a 'soc' subdirectory:
+${root}
+Hints:
+  - if your SoC family directory is '/foo/bar/soc/<ARCH>/my_soc_family', then add '/foo/bar' to SOC_ROOT, not the entire SoC family path
+  - if in doubt, use absolute paths")
+  endif()
+
   if(EXISTS ${root}/soc/${ARCH}/${SOC_PATH})
     set(SOC_DIR ${root}/soc)
     break()
@@ -628,8 +654,6 @@ endif()
 #
 # Currently used properties:
 # - COMPILES_OPTIONS: Used by application memory partition feature
-# - ${TARGET}_DEPENDENCIES: additional dependencies for targets that need them
-#   like flash (FLASH_DEPENDENCIES), debug (DEBUG_DEPENDENCIES), etc.
 add_custom_target(zephyr_property_target)
 
 # "app" is a CMake library containing all the application code and is

@@ -104,8 +104,10 @@ struct clock_control_driver_api {
 static inline int clock_control_on(const struct device *dev,
 				   clock_control_subsys_t sys)
 {
-	if (!device_is_ready(dev)) {
-		return -ENODEV;
+	int ret = device_usable_check(dev);
+
+	if (ret != 0) {
+		return ret;
 	}
 
 	const struct clock_control_driver_api *api =
@@ -127,8 +129,10 @@ static inline int clock_control_on(const struct device *dev,
 static inline int clock_control_off(const struct device *dev,
 				    clock_control_subsys_t sys)
 {
-	if (!device_is_ready(dev)) {
-		return -ENODEV;
+	int ret = device_usable_check(dev);
+
+	if (ret != 0) {
+		return ret;
 	}
 
 	const struct clock_control_driver_api *api =
@@ -150,7 +154,8 @@ static inline int clock_control_off(const struct device *dev,
  *
  * @retval 0 if start is successfully initiated.
  * @retval -EALREADY if clock was already started and is starting or running.
- * @retval -ENOTSUP if not supported.
+ * @retval -ENOTSUP If the requested mode of operation is not supported.
+ * @retval -ENOSYS if the interface is not implemented.
  * @retval other negative errno on vendor specific error.
  */
 static inline int clock_control_async_on(const struct device *dev,
@@ -161,12 +166,14 @@ static inline int clock_control_async_on(const struct device *dev,
 	const struct clock_control_driver_api *api =
 		(const struct clock_control_driver_api *)dev->api;
 
-	if (!api->async_on) {
-		return -ENOTSUP;
+	if (api->async_on == NULL) {
+		return -ENOSYS;
 	}
 
-	if (!device_is_ready(dev)) {
-		return -ENODEV;
+	int ret = device_usable_check(dev);
+
+	if (ret != 0) {
+		return ret;
 	}
 
 	return api->async_on(dev, sys, cb, user_data);
@@ -208,15 +215,18 @@ static inline int clock_control_get_rate(const struct device *dev,
 					 clock_control_subsys_t sys,
 					 uint32_t *rate)
 {
-	if (!device_is_ready(dev)) {
-		return -ENODEV;
+	int ret = device_usable_check(dev);
+
+	if (ret != 0) {
+		return ret;
 	}
 
 	const struct clock_control_driver_api *api =
 		(const struct clock_control_driver_api *)dev->api;
 
-	__ASSERT(api->get_rate != NULL, "%s not implemented for device %s",
-		__func__, dev->name);
+	if (api->get_rate == NULL) {
+		return -ENOSYS;
+	}
 
 	return api->get_rate(dev, sys, rate);
 }

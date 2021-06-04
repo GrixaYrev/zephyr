@@ -5,12 +5,7 @@
  */
 
 #include <zephyr.h>
-
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_ull_sync_iso
-#include "common/log.h"
-#include "hal/debug.h"
-
+#include <bluetooth/bluetooth.h>
 #include <sys/byteorder.h>
 
 #include "util/util.h"
@@ -25,10 +20,9 @@
 #include "ticker/ticker.h"
 
 #include "pdu.h"
-#include "ll.h"
 
 #include "lll.h"
-#include "lll_vendor.h"
+#include "lll/lll_vendor.h"
 #include "lll_clock.h"
 #include "lll_scan.h"
 #include "lll_sync.h"
@@ -42,10 +36,17 @@
 #include "ull_sync_internal.h"
 #include "ull_sync_iso_internal.h"
 
+#include "ll.h"
+
+#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
+#define LOG_MODULE_NAME bt_ctlr_ull_sync_iso
+#include "common/log.h"
+#include "hal/debug.h"
+
 static int init_reset(void);
 static inline struct ll_sync_iso *sync_iso_acquire(void);
 static void ticker_cb(uint32_t ticks_at_expire, uint32_t remainder,
-		      uint16_t lazy, void *param);
+		      uint16_t lazy, uint8_t force, void *param);
 static void ticker_op_cb(uint32_t status, void *param);
 
 static struct ll_sync_iso ll_sync_iso_pool[CONFIG_BT_CTLR_SCAN_SYNC_ISO_SET];
@@ -222,7 +223,7 @@ uint8_t ull_sync_iso_handle_get(struct ll_sync_iso *sync)
 
 uint8_t ull_sync_iso_lll_handle_get(struct lll_sync_iso *lll)
 {
-	return ull_sync_handle_get((void *)HDR_LLL2EVT(lll));
+	return ull_sync_handle_get(HDR_LLL2ULL(lll));
 }
 
 void ull_sync_iso_release(struct ll_sync_iso *sync_iso)
@@ -306,7 +307,7 @@ static inline struct ll_sync_iso *sync_iso_acquire(void)
 }
 
 static void ticker_cb(uint32_t ticks_at_expire, uint32_t remainder,
-		      uint16_t lazy, void *param)
+		      uint16_t lazy, uint8_t force, void *param)
 {
 	/* TODO: Implement LLL handling */
 #if 0
@@ -330,6 +331,7 @@ static void ticker_cb(uint32_t ticks_at_expire, uint32_t remainder,
 	p.ticks_at_expire = ticks_at_expire;
 	p.remainder = remainder;
 	p.lazy = lazy;
+	p.force = force;
 	p.param = lll;
 	mfy.param = &p;
 

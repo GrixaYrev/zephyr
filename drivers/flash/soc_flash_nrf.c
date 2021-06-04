@@ -241,11 +241,6 @@ static int flash_nrf_erase(const struct device *dev, off_t addr, size_t size)
 	return ret;
 }
 
-static int flash_nrf_write_protection(const struct device *dev, bool enable)
-{
-	return 0;
-}
-
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 static struct flash_pages_layout dev_layout;
 
@@ -270,7 +265,6 @@ static const struct flash_driver_api flash_nrf_api = {
 	.read = flash_nrf_read,
 	.write = flash_nrf_write,
 	.erase = flash_nrf_erase,
-	.write_protection = flash_nrf_write_protection,
 	.get_parameters = flash_nrf_get_parameters,
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 	.page_layout = flash_nrf_pages_layout,
@@ -293,7 +287,7 @@ static int nrf_flash_init(const struct device *dev)
 	return 0;
 }
 
-DEVICE_DT_INST_DEFINE(0, nrf_flash_init, device_pm_control_nop,
+DEVICE_DT_INST_DEFINE(0, nrf_flash_init, NULL,
 		 NULL, NULL,
 		 POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
 		 &flash_nrf_api);

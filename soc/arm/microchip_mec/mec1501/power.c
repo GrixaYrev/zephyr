@@ -8,7 +8,7 @@
 #include <zephyr.h>
 #include <sys/sys_io.h>
 #include <sys/__assert.h>
-#include <power/power.h>
+#include <pm/pm.h>
 #include <soc.h>
 #include "device_power.h"
 
@@ -64,7 +64,7 @@ static void z_power_soc_deep_sleep(void)
 
 	/* Wait for PLL to lock */
 	while ((PCR_REGS->OSC_ID & MCHP_PCR_OSC_ID_PLL_LOCK) == 0) {
-	};
+	}
 
 	soc_deep_sleep_periph_restore();
 
