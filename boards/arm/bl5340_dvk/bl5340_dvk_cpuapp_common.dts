@@ -64,7 +64,7 @@
 		compatible = "st,lis2dh";
 		label = "LIS3DH";
 		reg = <0x18>;
-		irq-gpios = <&gpio0 23 GPIO_ACTIVE_LOW>, <&gpio0 24 GPIO_ACTIVE_LOW>;
+		irq-gpios = <&gpio0 23 GPIO_ACTIVE_HIGH>, <&gpio0 24 GPIO_ACTIVE_HIGH>;
 	};
 
 	ft5336@38 {
@@ -78,6 +78,13 @@
 		compatible = "bosch,bme680";
 		reg = <0x76>;
 		label = "BME680";
+	};
+
+	dac0: mcp4725@60 {
+		compatible = "microchip,mcp4725";
+		reg = <0x60>;
+		label = "dac0";
+		#io-channel-cells = <1>;
 	};
 };
 

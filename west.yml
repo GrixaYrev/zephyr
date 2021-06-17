@@ -38,7 +38,7 @@ manifest:
       path: modules/lib/canopennode
       revision: 468d350028a975b96563e58344de48281a0ab371
     - name: civetweb
-      revision: e6903b80c09d17cd1a8bb32e40080005558aad29
+      revision: 094aeb41bb93e9199d24d665ee43e9e05d6d7b1c
       path: modules/lib/civetweb
     - name: hal_espressif
       west-commands: west/west-commands.yml
@@ -54,7 +54,7 @@ manifest:
       revision: f1fa8241f8786198ba41155413243de36ed878a5
       path: modules/hal/infineon
     - name: hal_nordic
-      revision: 574493fe29c79140df4827ab5d4a23df79d03681
+      revision: 74b3b21f60aa3dc9a4364ffc28dbb47ad8b699a9
       path: modules/hal/nordic
     - name: hal_openisa
       revision: 40d049f69c50b58ea20473bee14cf93f518bf262
@@ -91,7 +91,7 @@ manifest:
       revision: 5765cb7f75a9973ae9232d438e361a9d7bbc49e7
       path: modules/crypto/mbedtls
     - name: mcuboot
-      revision: 2fce9769b191411d580bbc65b043956c2ae9307e
+      revision: 7a5196820ba48a6ad7e7d573c9048c021960677c
       path: bootloader/mcuboot
     - name: mcumgr
       revision: 5c5055f5a7565f8152d75fcecf07262928b4d56e
@@ -106,13 +106,13 @@ manifest:
       revision: 6010f0523cbc75f551d9256cf782f173177acdef
       path: modules/lib/open-amp
     - name: loramac-node
-      revision: 2cee5f7295ff0ff804bf06fea5de006bc7cd121e
+      revision: 0a5dfdbc00d6c8bd1ea3acb76941521d09aa3eff
       path: modules/lib/loramac-node
     - name: openthread
-      revision: 385e19da1ae15f27872c2543b97276a42f102ead
+      revision: f460532d4afa5d49feba241e5dc31c56123d31a8
       path: modules/lib/openthread
     - name: segger
-      revision: 7cbc8446db9e09ed0ca4e60e48f38e2c330223fe
+      revision: 3a52ab222133193802d3c3b4d21730b9b1f1d2f6
       path: modules/debug/segger
     - name: sof
       revision: 779f28ed465c03899c8a7d4aaf399856f4e51158
@@ -155,6 +155,9 @@ manifest:
       repo-path: tensorflow
       path: modules/lib/tensorflow
       revision: dc70a45a7cc12c25726a32cd91b28be59e7bc596
+    - name: lz4
+      path: modules/lib/lz4
+      revision: 8e303c264fc21c2116dc612658003a22e933124d
 
   self:
     path: zephyr

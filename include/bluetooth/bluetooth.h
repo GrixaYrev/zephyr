@@ -130,6 +130,11 @@ typedef void (*bt_ready_cb_t)(int err);
  * Enable Bluetooth. Must be the called before any calls that
  * require communication with the local Bluetooth hardware.
  *
+ * When @option{CONFIG_BT_SETTINGS} has been enabled and the application is not
+ * managing identities of the stack itself then the application must call
+ * @ref settings_load() before the stack is fully enabled.
+ * See @ref bt_id_create() for more information.
+ *
  * @param cb Callback to notify completion or NULL to perform the
  * enabling synchronously.
  *
@@ -160,24 +165,6 @@ int bt_set_name(const char *name);
  * @return Bluetooth Device Name
  */
 const char *bt_get_name(void);
-
-/**
- * @brief Set the local Identity Address
- *
- * Allows setting the local Identity Address from the application.
- * This API must be called before calling bt_enable(). Calling it at any
- * other time will cause it to fail. In most cases the application doesn't
- * need to use this API, however there are a few valid cases where
- * it can be useful (such as for testing).
- *
- * At the moment, the given address must be a static random address. In the
- * future support for public addresses may be added.
- *
- * @deprecated in 2.5 release, replace with bt_id_create before bt_enable.
- *
- * @return Zero on success or (negative) error code otherwise.
- */
-__deprecated int bt_set_id_addr(const bt_addr_le_t *addr);
 
 /**
  * @brief Get the currently configured identities.

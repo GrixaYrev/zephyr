@@ -34,12 +34,14 @@
 #include "ull_conn_types.h"
 #include "ull_conn_iso_types.h"
 #include "ull_internal.h"
-#include "ull_iso_internal.h"
 #include "ull_sched_internal.h"
 #include "ull_chan_internal.h"
 #include "ull_conn_internal.h"
 #include "ull_slave_internal.h"
 #include "ull_master_internal.h"
+
+#include "ull_iso_internal.h"
+#include "ull_conn_iso_internal.h"
 #include "ull_peripheral_iso_internal.h"
 
 #if defined(CONFIG_BT_CTLR_USER_EXT)
@@ -80,6 +82,7 @@ static void ticker_start_conn_op_cb(uint32_t status, void *param);
 static void conn_setup_adv_scan_disabled_cb(void *param);
 static inline void disable(uint16_t handle);
 static void conn_cleanup(struct ll_conn *conn, uint8_t reason);
+static void conn_cleanup_finalize(struct ll_conn *conn);
 static void tx_ull_flush(struct ll_conn *conn);
 static void ticker_op_stop_cb(uint32_t status, void *param);
 static void disabled_cb(void *param);
@@ -820,25 +823,19 @@ bool ull_conn_peer_connected(uint8_t own_addr_type, uint8_t *own_addr,
 
 void ull_conn_setup(memq_link_t *rx_link, struct node_rx_hdr *rx)
 {
-	static memq_link_t link;
-	static struct mayfly mfy = {0, 0, &link, NULL, NULL};
 	struct node_rx_ftr *ftr;
 	struct lll_conn *lll;
 	struct ull_hdr *hdr;
-
-	/* Pass the node rx as mayfly function parameter */
-	mfy.param = rx;
 
 	/* Store the link in the node rx so that when done event is
 	 * processed it can be used to enqueue node rx towards LL context
 	 */
 	rx->link = rx_link;
 
-	ftr = &(rx->rx_ftr);
-
 	/* NOTE: LLL conn context SHALL be after lll_hdr in
 	 *       struct lll_adv and struct lll_scan.
 	 */
+	ftr = &(rx->rx_ftr);
 	lll = *((struct lll_conn **)((uint8_t *)ftr->param +
 				     sizeof(struct lll_hdr)));
 
@@ -847,23 +844,14 @@ void ull_conn_setup(memq_link_t *rx_link, struct node_rx_hdr *rx)
 	 */
 	hdr = HDR_LLL2ULL(ftr->param);
 	if (ull_ref_get(hdr)) {
-		uint32_t ret;
-
+		/* Setup connection in ULL disabled callback,
+		 * pass the node rx as disabled callback parameter.
+		 */
 		LL_ASSERT(!hdr->disabled_cb);
-		hdr->disabled_param = mfy.param;
+		hdr->disabled_param = rx;
 		hdr->disabled_cb = conn_setup_adv_scan_disabled_cb;
-
-		mfy.fp = lll_disable;
-		ret = mayfly_enqueue(TICKER_USER_ID_ULL_LOW,
-				     TICKER_USER_ID_LLL, 0, &mfy);
-		LL_ASSERT(!ret);
 	} else {
-		uint32_t ret;
-
-		mfy.fp = conn_setup_adv_scan_disabled_cb;
-		ret = mayfly_enqueue(TICKER_USER_ID_ULL_LOW,
-				     TICKER_USER_ID_ULL_HIGH, 0, &mfy);
-		LL_ASSERT(!ret);
+		conn_setup_adv_scan_disabled_cb(rx);
 	}
 }
 
@@ -1898,12 +1886,11 @@ static void conn_setup_adv_scan_disabled_cb(void *param)
 	struct node_rx_hdr *rx;
 	struct lll_conn *lll;
 
-	rx = param;
-	ftr = &(rx->rx_ftr);
-
 	/* NOTE: LLL conn context SHALL be after lll_hdr in
 	 *       struct lll_adv and struct lll_scan.
 	 */
+	rx = param;
+	ftr = &(rx->rx_ftr);
 	lll = *((struct lll_conn **)((uint8_t *)ftr->param +
 				     sizeof(struct lll_hdr)));
 	switch (lll->role) {
@@ -1939,27 +1926,27 @@ static inline void disable(uint16_t handle)
 	conn->lll.link_tx_free = NULL;
 }
 
-static void conn_cleanup(struct ll_conn *conn, uint8_t reason)
+#if defined(CONFIG_BT_CTLR_PERIPHERAL_ISO) || defined(CONFIG_BT_CTLR_CENTRAL_ISO)
+static void conn_cleanup_iso_cis_released_cb(struct ll_conn *conn)
+{
+	struct ll_conn_iso_stream *cis;
+
+	cis = ll_conn_iso_stream_get_by_acl(conn, NULL);
+	if (cis) {
+		/* More associated CISes - stop next */
+		ull_conn_iso_cis_stop(cis, conn_cleanup_iso_cis_released_cb);
+	} else {
+		/* No more CISes associated with conn - finalize */
+		conn_cleanup_finalize(conn);
+	}
+}
+#endif /* CONFIG_BT_CTLR_PERIPHERAL_ISO || CONFIG_BT_CTLR_CENTRAL_ISO */
+
+static void conn_cleanup_finalize(struct ll_conn *conn)
 {
 	struct lll_conn *lll = &conn->lll;
 	struct node_rx_pdu *rx;
 	uint32_t ticker_status;
-
-	/* reset mutex */
-	if (conn == conn_upd_curr) {
-		ull_conn_upd_curr_reset();
-	}
-
-	/* Only termination structure is populated here in ULL context
-	 * but the actual enqueue happens in the LLL context in
-	 * tx_lll_flush. The reason being to avoid passing the reason
-	 * value and handle through the mayfly scheduling of the
-	 * tx_lll_flush.
-	 */
-	rx = (void *)&conn->llcp_terminate.node_rx;
-	rx->hdr.handle = conn->lll.handle;
-	rx->hdr.type = NODE_RX_TYPE_TERMINATE;
-	*((uint8_t *)rx->pdu) = reason;
 
 	/* release any llcp reserved rx node */
 	rx = conn->llcp_rx;
@@ -1993,6 +1980,42 @@ static void conn_cleanup(struct ll_conn *conn, uint8_t reason)
 
 	/* Demux and flush Tx PDUs that remain enqueued in thread context */
 	ull_conn_tx_demux(UINT8_MAX);
+}
+
+static void conn_cleanup(struct ll_conn *conn, uint8_t reason)
+{
+	struct node_rx_pdu *rx;
+
+#if defined(CONFIG_BT_CTLR_PERIPHERAL_ISO) || defined(CONFIG_BT_CTLR_CENTRAL_ISO)
+	struct ll_conn_iso_stream *cis;
+#endif /* CONFIG_BT_CTLR_PERIPHERAL_ISO || CONFIG_BT_CTLR_CENTRAL_ISO */
+
+	/* Reset mutex */
+	if (conn == conn_upd_curr) {
+		ull_conn_upd_curr_reset();
+	}
+
+	/* Only termination structure is populated here in ULL context
+	 * but the actual enqueue happens in the LLL context in
+	 * tx_lll_flush. The reason being to avoid passing the reason
+	 * value and handle through the mayfly scheduling of the
+	 * tx_lll_flush.
+	 */
+	rx = (void *)&conn->llcp_terminate.node_rx;
+	rx->hdr.handle = conn->lll.handle;
+	rx->hdr.type = NODE_RX_TYPE_TERMINATE;
+	*((uint8_t *)rx->pdu) = reason;
+
+#if defined(CONFIG_BT_CTLR_PERIPHERAL_ISO) || defined(CONFIG_BT_CTLR_CENTRAL_ISO)
+	cis = ll_conn_iso_stream_get_by_acl(conn, NULL);
+	if (cis) {
+		/* Stop CIS and defer cleanup to after teardown. */
+		ull_conn_iso_cis_stop(cis, conn_cleanup_iso_cis_released_cb);
+		return;
+	}
+#endif /* CONFIG_BT_CTLR_PERIPHERAL_ISO || CONFIG_BT_CTLR_CENTRAL_ISO */
+
+	conn_cleanup_finalize(conn);
 }
 
 static void tx_ull_flush(struct ll_conn *conn)
