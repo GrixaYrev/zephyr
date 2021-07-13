@@ -996,7 +996,7 @@ static int uart_nrfx_init(const struct device *dev)
 	nrf_gpio_cfg_output(TX_PIN);
 
 	if (RX_PIN_USED) {
-		nrf_gpio_cfg_input(RX_PIN, NRF_GPIO_PIN_NOPULL);
+		nrf_gpio_cfg_input(RX_PIN, NRF_GPIO_PIN_PULLUP);
 	}
 
 	nrf_uart_txrx_pins_set(uart0_addr, TX_PIN, RX_PIN);
@@ -1010,7 +1010,7 @@ static int uart_nrfx_init(const struct device *dev)
 	}
 
 	if (HAS_PROP(cts_pin)) {
-		nrf_gpio_cfg_input(CTS_PIN, NRF_GPIO_PIN_NOPULL);
+		nrf_gpio_cfg_input(CTS_PIN, NRF_GPIO_PIN_PULLUP);
 	}
 
 	nrf_uart_hwfc_pins_set(uart0_addr, RTS_PIN, CTS_PIN);
@@ -1113,7 +1113,7 @@ static void uart_nrfx_pins_enable(const struct device *dev, bool enable)
 		nrf_gpio_pin_write(tx_pin, 1);
 		nrf_gpio_cfg_output(tx_pin);
 		if (RX_PIN_USED) {
-			nrf_gpio_cfg_input(rx_pin, NRF_GPIO_PIN_NOPULL);
+			nrf_gpio_cfg_input(rx_pin, NRF_GPIO_PIN_PULLUP);
 		}
 
 		if (HAS_PROP(rts_pin)) {
@@ -1121,8 +1121,7 @@ static void uart_nrfx_pins_enable(const struct device *dev, bool enable)
 			nrf_gpio_cfg_output(rts_pin);
 		}
 		if (HAS_PROP(cts_pin)) {
-			nrf_gpio_cfg_input(cts_pin,
-					   NRF_GPIO_PIN_NOPULL);
+			nrf_gpio_cfg_input(cts_pin, NRF_GPIO_PIN_PULLUP);
 		}
 	} else {
 		nrf_gpio_cfg_default(tx_pin);
@@ -1141,7 +1140,7 @@ static void uart_nrfx_pins_enable(const struct device *dev, bool enable)
 }
 
 static void uart_nrfx_set_power_state(const struct device *dev,
-				      uint32_t new_state)
+				      enum pm_device_state new_state)
 {
 	if (new_state == PM_DEVICE_STATE_ACTIVE) {
 		uart_nrfx_pins_enable(dev, true);
@@ -1161,12 +1160,12 @@ static void uart_nrfx_set_power_state(const struct device *dev,
 
 static int uart_nrfx_pm_control(const struct device *dev,
 				uint32_t ctrl_command,
-				uint32_t *state, pm_device_cb cb, void *arg)
+				enum pm_device_state *state, pm_device_cb cb, void *arg)
 {
-	static uint32_t current_state = PM_DEVICE_STATE_ACTIVE;
+	static enum pm_device_state current_state = PM_DEVICE_STATE_ACTIVE;
 
 	if (ctrl_command == PM_DEVICE_STATE_SET) {
-		uint32_t new_state = *state;
+		enum pm_device_state new_state = *state;
 
 		if (new_state != current_state) {
 			uart_nrfx_set_power_state(dev, new_state);

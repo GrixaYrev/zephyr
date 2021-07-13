@@ -24,10 +24,10 @@ config OPENTHREAD_XPANID
 	  Extended PAN ID for OpenThread with
 	  format "de:ad:00:be:ef:00:ca:fe"
 
-config OPENTHREAD_MASTERKEY
-	string "Default Thread Master Key"
+config OPENTHREAD_NETWORKKEY
+	string "Default Thread Network Key"
 	help
-	  Master Key for OpenThread with format
+	  Network Key for OpenThread with format
 	  "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
 
 config OPENTHREAD_JOINER_AUTOSTART
@@ -88,7 +88,13 @@ config OPENTHREAD_CSL_SAMPLE_WINDOW
 
 config OPENTHREAD_CSL_RECEIVE_TIME_AHEAD
 	int "CSL receiver wake up margin in units of 10 symbols"
-	default 3
+	default 480
+
+config OPENTHREAD_CSL_MIN_RECEIVE_ON
+	int "Minimum CSL receive window"
+	default 5696
+	help
+	  The minimum CSL receive window (in microseconds) required to receive a full IEEE 802.15.4 frame
 
 config OPENTHREAD_MAC_SOFTWARE_TX_SECURITY_ENABLE
 	bool "Enable software transmission security logic"
