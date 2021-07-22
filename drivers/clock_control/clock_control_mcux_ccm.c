@@ -150,9 +150,11 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 					source_clk_freq = CLOCK_GetUsb1PfdFreq(kCLOCK_Pfd2);
 					break;
 
+			#ifdef PLL_VIDEO_OFFSET
 				case 2: /* PLL5 */
 					source_clk_freq = CLOCK_GetPllFreq(kCLOCK_PllVideo);
 					break;
+			#endif
 
 				case 3: /* pll3_sw_clk */
 					source_clk_freq = CLOCK_GetPllFreq(kCLOCK_PllUsb1);
@@ -180,9 +182,11 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 					source_clk_freq = CLOCK_GetUsb1PfdFreq(kCLOCK_Pfd2);
 					break;
 
+			#ifdef PLL_VIDEO_OFFSET
 				case 2: /* PLL5 */
 					source_clk_freq = CLOCK_GetPllFreq(kCLOCK_PllVideo);
 					break;
+			#endif
 
 				case 3: /* pll3_sw_clk */
 					source_clk_freq = CLOCK_GetPllFreq(kCLOCK_PllUsb1);
