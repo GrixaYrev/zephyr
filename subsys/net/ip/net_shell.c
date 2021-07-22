@@ -266,6 +266,9 @@ static struct ethernet_capabilities eth_hw_caps[] = {
 	EC(ETHERNET_DUPLEX_SET,           "Half/full duplex"),
 	EC(ETHERNET_PTP,                  "IEEE 802.1AS gPTP clock"),
 	EC(ETHERNET_QAV,                  "IEEE 802.1Qav (credit shaping)"),
+	EC(ETHERNET_QBV,                  "IEEE 802.1Qbv (scheduled traffic)"),
+	EC(ETHERNET_QBU,                  "IEEE 802.1Qbu (frame preemption)"),
+	EC(ETHERNET_TXTIME,               "TXTIME"),
 	EC(ETHERNET_PROMISC_MODE,         "Promiscuous mode"),
 	EC(ETHERNET_PRIORITY_QUEUES,      "Priority queues"),
 	EC(ETHERNET_HW_FILTERING,         "MAC address filtering"),
@@ -2159,7 +2162,7 @@ static void print_dns_info(const struct shell *shell,
 	for (i = 0; i < CONFIG_DNS_NUM_CONCUR_QUERIES; i++) {
 		int32_t remaining;
 
-		if (!ctx->queries[i].cb) {
+		if (!ctx->queries[i].cb || !ctx->queries[i].query) {
 			continue;
 		}
 

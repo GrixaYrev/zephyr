@@ -36,13 +36,13 @@ static void trigger_handler(const struct device *dev,
 #ifdef CONFIG_PM_DEVICE
 static void pm_cb(const struct device *dev,
 		  int status,
-		  void *context,
+		  uint32_t *state,
 		  void *arg)
 {
 	ARG_UNUSED(dev);
 	ARG_UNUSED(arg);
 
-	switch (*(uint32_t *)context) {
+	switch (*state) {
 	case PM_DEVICE_STATE_ACTIVE:
 		printk("Enter ACTIVE_STATE ");
 		break;
@@ -95,7 +95,7 @@ void main(void)
 
 #ifdef CONFIG_PM_DEVICE
 	/* Testing the power modes */
-	uint32_t p_state;
+	enum pm_device_state p_state;
 
 	p_state = PM_DEVICE_STATE_LOW_POWER;
 	pm_device_state_set(dev, p_state, pm_cb, NULL);

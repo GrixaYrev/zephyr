@@ -41,6 +41,7 @@ enum i2c_ch_status {
 struct i2c_it8xxx2_data {
 	enum i2c_ch_status i2ccs;
 	struct i2c_msg *msgs;
+	struct k_mutex mutex;
 	struct k_sem device_sync_sem;
 	/* Index into output data */
 	size_t widx;
@@ -172,7 +173,17 @@ static int i2c_is_busy(const struct device *dev)
 	return (IT83XX_I2C_STR(base) & E_HOSTA_BB);
 }
 
-static void i2c_reset(const struct device *dev, int cause)
+static int i2c_bus_not_available(const struct device *dev)
+{
+	if (i2c_is_busy(dev) ||
+		(i2c_get_line_levels(dev) != I2C_LINE_IDLE)) {
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static void i2c_reset(const struct device *dev)
 {
 	const struct i2c_it8xxx2_config *config = DEV_CFG(dev);
 	uint8_t *base = config->base;
@@ -187,7 +198,6 @@ static void i2c_reset(const struct device *dev, int cause)
 		/* State reset and hardware reset */
 		IT83XX_I2C_CTR(base) = E_STS_AND_HW_RST;
 	}
-	printk("I2C ch%d reset cause %d\n", config->port, cause);
 }
 
 /*
@@ -395,7 +405,7 @@ static int enhanced_i2c_tran_read(const struct device *dev)
 		/* Direct read  */
 		data->i2ccs = I2C_CH_WAIT_READ;
 		/* Send ID */
-		i2c_pio_trans_data(dev, RX_DIRECT, data->addr_16bit, 1);
+		i2c_pio_trans_data(dev, RX_DIRECT, data->addr_16bit << 1, 1);
 	} else {
 		if (data->i2ccs) {
 			if (data->i2ccs == I2C_CH_WAIT_READ) {
@@ -409,7 +419,7 @@ static int enhanced_i2c_tran_read(const struct device *dev)
 				data->i2ccs = I2C_CH_WAIT_READ;
 				/* Send ID */
 				i2c_pio_trans_data(dev, RX_DIRECT,
-					data->addr_16bit, 1);
+					data->addr_16bit << 1, 1);
 			}
 			/* Turn on irq before next direct read */
 			irq_enable(config->i2c_irq_base);
@@ -452,7 +462,7 @@ static int enhanced_i2c_tran_write(const struct device *dev)
 		data->msgs->flags &= ~I2C_MSG_START;
 		enhanced_i2c_start(dev);
 		/* Send ID */
-		i2c_pio_trans_data(dev, TX_DIRECT, data->addr_16bit, 1);
+		i2c_pio_trans_data(dev, TX_DIRECT, data->addr_16bit << 1, 1);
 	} else {
 		/* Host has completed the transmission of a byte */
 		if (data->widx < data->msgs->len) {
@@ -532,7 +542,7 @@ static int i2c_tran_read(const struct device *dev)
 		 * bit0, Direction of the host transfer.
 		 * bit[1:7}, Address of the targeted slave.
 		 */
-		IT83XX_SMB_TRASLA(base) = (uint8_t)data->addr_16bit | 0x01;
+		IT83XX_SMB_TRASLA(base) = (uint8_t)(data->addr_16bit << 1) | 0x01;
 		/* clear start flag */
 		data->msgs->flags &= ~I2C_MSG_START;
 		/*
@@ -607,7 +617,7 @@ static int i2c_tran_write(const struct device *dev)
 		 * bit0, Direction of the host transfer.
 		 * bit[1:7}, Address of the targeted slave.
 		 */
-		IT83XX_SMB_TRASLA(base) = (uint8_t)data->addr_16bit;
+		IT83XX_SMB_TRASLA(base) = (uint8_t)data->addr_16bit << 1;
 		/* Send first byte */
 		IT83XX_SMB_HOBDB(base) = *(data->msgs->buf++);
 
@@ -711,6 +721,7 @@ static int i2c_it8xxx2_transfer(const struct device *dev, struct i2c_msg *msgs,
 {
 	struct i2c_it8xxx2_data *data = DEV_DATA(dev);
 	const struct i2c_it8xxx2_config *config = DEV_CFG(dev);
+	int res;
 
 	/* Check for NULL pointers */
 	if (dev == NULL) {
@@ -722,7 +733,33 @@ static int i2c_it8xxx2_transfer(const struct device *dev, struct i2c_msg *msgs,
 		return -EINVAL;
 	}
 
-	msgs->flags |= I2C_MSG_START;
+	/* Lock mutex of i2c controller */
+	k_mutex_lock(&data->mutex, K_FOREVER);
+	/*
+	 * If the transaction of write to read is divided into two
+	 * transfers, the repeat start transfer uses this flag to
+	 * exclude checking bus busy.
+	 */
+	if (data->i2ccs == I2C_CH_NORMAL) {
+		/* Make sure we're in a good state to start */
+		if (i2c_bus_not_available(dev)) {
+			/* reset i2c port */
+			i2c_reset(dev);
+			printk("I2C ch%d reset cause %d\n", config->port,
+			       I2C_RC_NO_IDLE_FOR_START);
+			/*
+			 * After resetting I2C bus, if I2C bus is not available
+			 * (No external pull-up), drop the transaction.
+			 */
+			if (i2c_bus_not_available(dev)) {
+				/* Unlock mutex of i2c controller */
+				k_mutex_unlock(&data->mutex);
+				return -EIO;
+			}
+		}
+
+		msgs->flags |= I2C_MSG_START;
+	}
 
 	for (int i = 0; i < num_msgs; i++) {
 
@@ -732,12 +769,6 @@ static int i2c_it8xxx2_transfer(const struct device *dev, struct i2c_msg *msgs,
 		data->msgs = &(msgs[i]);
 		data->addr_16bit = addr;
 
-		/* Make sure we're in a good state to start */
-		if ((msgs->flags & I2C_MSG_START) && (i2c_is_busy(dev)
-			|| (i2c_get_line_levels(dev) != I2C_LINE_IDLE))) {
-			/* reset i2c port */
-			i2c_reset(dev, I2C_RC_NO_IDLE_FOR_START);
-		}
 		if (msgs->flags & I2C_MSG_START) {
 			data->i2ccs = I2C_CH_NORMAL;
 			/* enable i2c interrupt */
@@ -746,13 +777,32 @@ static int i2c_it8xxx2_transfer(const struct device *dev, struct i2c_msg *msgs,
 		/* Start transaction */
 		i2c_transaction(dev);
 		/* Wait for the transfer to complete */
-		k_sem_take(&data->device_sync_sem, K_FOREVER);
+		/* TODO: the timeout should be adjustable */
+		res = k_sem_take(&data->device_sync_sem, K_MSEC(100));
+		/*
+		 * The transaction is dropped on any error(timeout, NACK, fail,
+		 * bus error, device error).
+		 */
+		if (data->err)
+			break;
+
+		if (res != 0) {
+			data->err = ETIMEDOUT;
+			/* reset i2c port */
+			i2c_reset(dev);
+			printk("I2C ch%d:0x%X reset cause %d\n",
+			       config->port, data->addr_16bit, I2C_RC_TIMEOUT);
+			/* If this message is sent fail, drop the transaction. */
+			break;
+		}
 	}
 
 	/* reset i2c channel status */
-	if (data->err) {
+	if (data->err || (msgs->flags & I2C_MSG_STOP)) {
 		data->i2ccs = I2C_CH_NORMAL;
 	}
+	/* Unlock mutex of i2c controller */
+	k_mutex_unlock(&data->mutex);
 
 	return data->err;
 }
@@ -778,6 +828,8 @@ static int i2c_it8xxx2_init(const struct device *dev)
 	uint32_t bitrate_cfg, offset = 0;
 	int error;
 
+	/* Initialize mutex and semaphore */
+	k_mutex_init(&data->mutex);
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 
 	switch ((uint32_t)base) {
@@ -846,6 +898,7 @@ static int i2c_it8xxx2_init(const struct device *dev)
 
 	bitrate_cfg = i2c_map_dt_bitrate(config->bitrate);
 	error = i2c_it8xxx2_configure(dev, I2C_MODE_MASTER | bitrate_cfg);
+	data->i2ccs = I2C_CH_NORMAL;
 
 	if (error) {
 		LOG_ERR("i2c: failure initializing");

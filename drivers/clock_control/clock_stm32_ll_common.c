@@ -55,7 +55,7 @@
 #define RCC_CALC_FLASH_FREQ __LL_RCC_CALC_HCLK3_FREQ
 #define GET_CURRENT_FLASH_PRESCALER LL_RCC_GetAHB3Prescaler
 #else
-#define RCC_CALC_FLASH_FREQ __LL_RCC_CALC_HCLK1_FREQ
+#define RCC_CALC_FLASH_FREQ __LL_RCC_CALC_HCLK_FREQ
 #define GET_CURRENT_FLASH_PRESCALER LL_RCC_GetAHBPrescaler
 #endif
 
@@ -154,6 +154,11 @@ static inline int stm32_clock_control_on(const struct device *dev,
 		LL_APB2_GRP1_EnableClock(pclken->enr);
 		break;
 #endif
+#if defined(CONFIG_SOC_SERIES_STM32WLX)
+	case STM32_CLOCK_BUS_APB3:
+		LL_APB3_GRP1_EnableClock(pclken->enr);
+		break;
+#endif
 #if defined (CONFIG_SOC_SERIES_STM32L0X) || \
 	defined (CONFIG_SOC_SERIES_STM32G0X)
 	case STM32_CLOCK_BUS_IOP:
@@ -221,6 +226,11 @@ static inline int stm32_clock_control_off(const struct device *dev,
 		LL_APB2_GRP1_DisableClock(pclken->enr);
 		break;
 #endif
+#if defined(CONFIG_SOC_SERIES_STM32WLX)
+	case STM32_CLOCK_BUS_APB3:
+		LL_APB3_GRP1_DisableClock(pclken->enr);
+		break;
+#endif
 #if defined (CONFIG_SOC_SERIES_STM32L0X) || \
 	defined (CONFIG_SOC_SERIES_STM32G0X)
 	case STM32_CLOCK_BUS_IOP:
@@ -252,13 +262,19 @@ static int stm32_clock_control_get_subsys_rate(const struct device *clock,
 	!defined (CONFIG_SOC_SERIES_STM32G0X)
 	uint32_t apb2_clock = get_bus_clock(ahb_clock, STM32_APB2_PRESCALER);
 #endif
+#if defined(CONFIG_SOC_SERIES_STM32WLX)
+	uint32_t ahb3_clock = get_bus_clock(ahb_clock * STM32_CPU1_PRESCALER,
+					    STM32_AHB3_PRESCALER);
+#endif
 
 	ARG_UNUSED(clock);
 
 	switch (pclken->bus) {
 	case STM32_CLOCK_BUS_AHB1:
 	case STM32_CLOCK_BUS_AHB2:
+#if !defined(CONFIG_SOC_SERIES_STM32WLX)
 	case STM32_CLOCK_BUS_AHB3:
+#endif
 #if defined (CONFIG_SOC_SERIES_STM32L0X) || \
 	defined (CONFIG_SOC_SERIES_STM32G0X)
 	case STM32_CLOCK_BUS_IOP:
@@ -287,6 +303,13 @@ static int stm32_clock_control_get_subsys_rate(const struct device *clock,
 	!defined (CONFIG_SOC_SERIES_STM32G0X)
 	case STM32_CLOCK_BUS_APB2:
 		*rate = apb2_clock;
+		break;
+#endif
+#if defined(CONFIG_SOC_SERIES_STM32WLX)
+	case STM32_CLOCK_BUS_AHB3:
+	case STM32_CLOCK_BUS_APB3:
+		/* AHB3 and APB3 share the same clock and prescaler. */
+		*rate = ahb3_clock;
 		break;
 #endif
 	default:

@@ -433,7 +433,7 @@ Configuration Options
 
 Related configuration options:
 
-* :option:`CONFIG_MAX_DOMAIN_PARTITIONS`
+* :kconfig:`CONFIG_MAX_DOMAIN_PARTITIONS`
 
 API Reference
 *************
@@ -441,4 +441,3 @@ API Reference
 The following memory domain APIs are provided by :zephyr_file:`include/kernel.h`:
 
 .. doxygengroup:: mem_domain_apis
-   :project: Zephyr

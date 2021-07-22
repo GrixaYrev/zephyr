@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-2020 Nordic Semiconductor ASA
+ * Copyright (c) 2016-2021 Nordic Semiconductor ASA
  * Copyright (c) 2016 Vinayak Kariappa Chettimada
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -10,6 +10,7 @@
 #include <zephyr.h>
 #include <soc.h>
 #include <bluetooth/hci.h>
+#include <sys/byteorder.h>
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
@@ -393,11 +394,11 @@ uint8_t ll_adv_params_set(uint16_t interval, uint8_t adv_type,
 
 		/* Zero-init header flags */
 		if (is_pdu_type_changed) {
-			*(uint8_t *)&pri_hdr_prev = 0;
+			*(uint8_t *)&pri_hdr_prev = 0U;
 		} else {
-			*(uint8_t *)&pri_hdr_prev = *(uint8_t *)pri_hdr;
+			pri_hdr_prev = *pri_hdr;
 		}
-		*(uint8_t *)pri_hdr = 0;
+		*(uint8_t *)pri_hdr = 0U;
 
 		/* AdvA flag */
 		if (pri_hdr_prev.adv_addr) {
@@ -672,10 +673,16 @@ uint8_t ll_adv_enable(uint8_t enable)
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 	} else if (pdu_adv->type == PDU_ADV_TYPE_EXT_IND) {
 		struct pdu_adv_com_ext_adv *pri_com_hdr;
+		struct pdu_adv_ext_hdr pri_hdr_flags;
 		struct pdu_adv_ext_hdr *pri_hdr;
 
 		pri_com_hdr = (void *)&pdu_adv->adv_ext_ind;
 		pri_hdr = (void *)pri_com_hdr->ext_hdr_adv_data;
+		if (pri_com_hdr->ext_hdr_len) {
+			pri_hdr_flags = *pri_hdr;
+		} else {
+			*(uint8_t *)&pri_hdr_flags = 0U;
+		}
 
 		if (pri_com_hdr->adv_mode & BT_HCI_LE_ADV_PROP_SCAN) {
 			struct pdu_adv *sr = lll_adv_scan_rsp_peek(lll);
@@ -686,11 +693,12 @@ uint8_t ll_adv_enable(uint8_t enable)
 		}
 
 		/* AdvA, fill here at enable */
-		if (pri_hdr->adv_addr) {
+		if (pri_hdr_flags.adv_addr) {
 			pdu_adv_to_update = pdu_adv;
 #if (CONFIG_BT_CTLR_ADV_AUX_SET > 0)
-		} else if (pri_hdr->aux_ptr) {
+		} else if (pri_hdr_flags.aux_ptr) {
 			struct pdu_adv_com_ext_adv *sec_com_hdr;
+			struct pdu_adv_ext_hdr sec_hdr_flags;
 			struct pdu_adv_ext_hdr *sec_hdr;
 			struct pdu_adv *sec_pdu;
 
@@ -698,8 +706,13 @@ uint8_t ll_adv_enable(uint8_t enable)
 
 			sec_com_hdr = (void *)&sec_pdu->adv_ext_ind;
 			sec_hdr = (void *)sec_com_hdr->ext_hdr_adv_data;
+			if (sec_com_hdr->ext_hdr_len) {
+				sec_hdr_flags = *sec_hdr;
+			} else {
+				*(uint8_t *)&sec_hdr_flags = 0U;
+			}
 
-			if (sec_hdr->adv_addr) {
+			if (sec_hdr_flags.adv_addr) {
 				pdu_adv_to_update = sec_pdu;
 			}
 #endif /* (CONFIG_BT_CTLR_ADV_AUX_SET > 0) */
@@ -830,15 +843,16 @@ uint8_t ll_adv_enable(uint8_t enable)
 		conn_lll->max_rx_octets = PDU_DC_PAYLOAD_SIZE_MIN;
 
 #if defined(CONFIG_BT_CTLR_PHY)
-#if defined(CONFIG_BT_CTLR_ADV_EXT)
-		conn_lll->max_tx_time = PKT_US(PDU_DC_PAYLOAD_SIZE_MIN,
-					       lll->phy_s);
-		conn_lll->max_rx_time = PKT_US(PDU_DC_PAYLOAD_SIZE_MIN,
-					       lll->phy_s);
-#else
 		/* Use the default 1M packet max time */
 		conn_lll->max_tx_time = PKT_US(PDU_DC_PAYLOAD_SIZE_MIN, PHY_1M);
 		conn_lll->max_rx_time = PKT_US(PDU_DC_PAYLOAD_SIZE_MIN, PHY_1M);
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
+		conn_lll->max_tx_time = MAX(conn_lll->max_tx_time,
+					    PKT_US(PDU_DC_PAYLOAD_SIZE_MIN,
+						   lll->phy_s));
+		conn_lll->max_rx_time = MAX(conn_lll->max_rx_time,
+					    PKT_US(PDU_DC_PAYLOAD_SIZE_MIN,
+						   lll->phy_s));
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 #endif /* CONFIG_BT_CTLR_PHY */
 #endif /* CONFIG_BT_CTLR_DATA_LENGTH */
@@ -893,6 +907,11 @@ uint8_t ll_adv_enable(uint8_t enable)
 		conn->connect_expire = 6;
 		conn->supervision_expire = 0;
 		conn->procedure_expire = 0;
+
+#if defined(CONFIG_BT_CTLR_LE_PING)
+		conn->apto_expire = 0U;
+		conn->appto_expire = 0U;
+#endif
 
 #if defined(CONFIG_BT_CTLR_CHECK_SAME_PEER_CONN)
 		conn->own_addr_type = BT_ADDR_LE_NONE->type;
@@ -1190,14 +1209,24 @@ uint8_t ll_adv_enable(uint8_t enable)
 		if (lll->sync) {
 			sync = HDR_LLL2ULL(lll->sync);
 			if (sync->is_enabled && !sync->is_started) {
+				struct pdu_adv_sync_info *sync_info;
+				uint8_t value[1 + sizeof(sync_info)];
 				uint8_t err;
 
 				err = ull_adv_aux_hdr_set_clear(adv,
 					ULL_ADV_PDU_HDR_FIELD_SYNC_INFO,
-					0, NULL, NULL, &pri_idx);
+					0, value, NULL, &pri_idx);
 				if (err) {
 					return err;
 				}
+
+				/* First byte in the length-value encoded
+				 * parameter is size of sync_info structure,
+				 * followed by pointer to sync_info in the
+				 * PDU.
+				 */
+				memcpy(&sync_info, &value[1], sizeof(sync_info));
+				ull_adv_sync_info_fill(sync, sync_info);
 			} else {
 				/* Do not start periodic advertising */
 				sync = NULL;
@@ -1572,6 +1601,10 @@ uint8_t ull_scan_rsp_set(struct ll_adv_set *adv, uint8_t len,
 	struct pdu_adv *pdu;
 	uint8_t idx;
 
+	if (len > PDU_AC_DATA_SIZE_MAX) {
+		return BT_HCI_ERR_INVALID_PARAM;
+	}
+
 	/* update scan pdu fields. */
 	prev = lll_adv_scan_rsp_peek(&adv->lll);
 	pdu = lll_adv_scan_rsp_alloc(&adv->lll, &idx);
@@ -1654,10 +1687,19 @@ void ull_adv_done(struct node_rx_event_done *done)
 const uint8_t *ull_adv_pdu_update_addrs(struct ll_adv_set *adv,
 					struct pdu_adv *pdu)
 {
-#if defined(CONFIG_BT_CTLR_ADV_EXT)
-	struct pdu_adv_ext_hdr *hdr = (void *)pdu->adv_ext_ind.ext_hdr_adv_data;
-#endif
 	const uint8_t *adv_addr;
+
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
+	struct pdu_adv_com_ext_adv *com_hdr = (void *)&pdu->adv_ext_ind;
+	struct pdu_adv_ext_hdr *hdr = (void *)com_hdr->ext_hdr_adv_data;
+	struct pdu_adv_ext_hdr hdr_flags;
+
+	if (com_hdr->ext_hdr_len) {
+		hdr_flags = *hdr;
+	} else {
+		*(uint8_t *)&hdr_flags = 0U;
+	}
+#endif
 
 	adv_addr = adva_update(adv, pdu);
 
@@ -1667,7 +1709,7 @@ const uint8_t *ull_adv_pdu_update_addrs(struct ll_adv_set *adv,
 	 */
 	if ((pdu->type == PDU_ADV_TYPE_DIRECT_IND) ||
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
-	    ((pdu->type == PDU_ADV_TYPE_EXT_IND) && hdr->tgt_addr) ||
+	    ((pdu->type == PDU_ADV_TYPE_EXT_IND) && hdr_flags.tgt_addr) ||
 #endif
 	    0) {
 		tgta_update(adv, pdu);
@@ -2112,12 +2154,21 @@ static inline uint8_t disable(uint8_t handle)
 static inline uint8_t *adv_pdu_adva_get(struct pdu_adv *pdu)
 {
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
-	struct pdu_adv_ext_hdr *hdr = (void *)pdu->adv_ext_ind.ext_hdr_adv_data;
+	struct pdu_adv_com_ext_adv *com_hdr = (void *)&pdu->adv_ext_ind;
+	struct pdu_adv_ext_hdr *hdr = (void *)com_hdr->ext_hdr_adv_data;
+	struct pdu_adv_ext_hdr hdr_flags;
+
+	if (com_hdr->ext_hdr_len) {
+		hdr_flags = *hdr;
+	} else {
+		*(uint8_t *)&hdr_flags = 0U;
+	}
 
 	/* All extended PDUs have AdvA at the same offset in common header */
 	if (pdu->type == PDU_ADV_TYPE_EXT_IND) {
-		LL_ASSERT(hdr->adv_addr);
-		return &pdu->adv_ext_ind.ext_hdr_adv_data[1];
+		LL_ASSERT(hdr_flags.adv_addr);
+
+		return &com_hdr->ext_hdr_adv_data[1];
 	}
 #endif
 

@@ -60,8 +60,8 @@ void arch_start_cpu(int cpu_num, k_thread_stack_t *stack, int sz,
 	uint64_t master_core_mpid;
 
 	/* Now it is on master core */
+	__ASSERT(arch_curr_cpu()->id == 0, "");
 	master_core_mpid = MPIDR_TO_CORE(GET_MPIDR());
-	__ASSERT(arm64_cpu_boot_params.mpid == master_core_mpid, "");
 
 	cpu_count = ARRAY_SIZE(cpu_node_list);
 	__ASSERT(cpu_count == CONFIG_MP_NUM_CPUS,

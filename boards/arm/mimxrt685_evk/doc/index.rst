@@ -83,6 +83,8 @@ features:
 +-----------+------------+-------------------------------------+
 | CLOCK     | on-chip    | clock_control                       |
 +-----------+------------+-------------------------------------+
+| HWINFO    | on-chip    | Unique device serial number         |
++-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
 
@@ -128,6 +130,10 @@ functionality of a pin.
 | PIO0_21 | I2S             | I2S TX SCK                 |
 +---------+-----------------+----------------------------+
 | PIO0_9  | I2S             | I2S DATAIN                 |
++---------+-----------------+----------------------------+
+| PIO0_29 | USART           | USART TX                   |
++---------+-----------------+----------------------------+
+| PIO0_30 | USART           | USART RX                   |
 +---------+-----------------+----------------------------+
 | PIO1_11 | FLEXSPI0B_DATA0 | OctalSPI Flash             |
 +---------+-----------------+----------------------------+
@@ -180,11 +186,20 @@ configured by default to use the LPC-Link2.
 -----------------------------------------
 
 Install the :ref:`jlink-debug-host-tools` and make sure they are in your search
-path.
+path. Install jumpers JP17, JP18 and JP19, to connect the SWD signals from onboard
+debug circuit.  These jumpers are installed by default.
 
 Follow the instructions in :ref:`lpclink2-jlink-onboard-debug-probe` to program
 the J-Link firmware. Please make sure you have the latest firmware for this
 board.
+
+:ref:`jlink-external-debug-probe`
+-----------------------------------------
+
+Install the :ref:`jlink-debug-host-tools` and make sure they are in your search
+path. Remove jumpers JP17, JP18 and JP19, to disconnect the SWD signals from onboard
+debug circuit.  These jumpers are installed by default. Connect the J-Link probe
+to J2 10-pin header.
 
 Configuring a Console
 =====================
@@ -234,6 +249,36 @@ should see the following message in the terminal:
 
    ***** Booting Zephyr OS zephyr-v2.3.0 *****
    Hello World! mimxrt685_evk_cm33
+
+Troubleshooting
+===============
+
+If the debug probe fails to connect with the following error, it's possible
+that the image in flash is interfering and causing this issue.
+
+.. code-block:: console
+
+   Remote debugging using :2331
+   Remote communication error.  Target disconnected.: Connection reset by peer.
+   "monitor" command not supported by this target.
+   "monitor" command not supported by this target.
+   You can't do that when your target is `exec'
+   (gdb) Could not connect to target.
+   Please check power, connection and settings.
+
+You can fix it by erasing and reprogramming the flash with the following
+steps:
+
+#. Set the SW5 DIP switches to ON-ON-ON to prevent booting from flash.
+
+#. Reset by pressing SW3
+
+#. Run ``west debug`` or ``west flash`` again with a known working Zephyr
+   application (example "Hello World").
+
+#. Set the SW5 DIP switches to ON-OFF-ON to boot from flash.
+
+#. Reset by pressing SW3
 
 .. _MIMXRT685-EVK Website:
    https://www.nxp.com/design/development-boards/i-mx-evaluation-and-development-boards/i-mx-rt600-evaluation-kit:MIMXRT685-EVK

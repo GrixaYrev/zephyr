@@ -219,13 +219,13 @@ static int vcnl4040_ambient_setup(const struct device *dev)
 
 #ifdef CONFIG_PM_DEVICE
 static int vcnl4040_device_ctrl(const struct device *dev,
-				uint32_t ctrl_command, void *context,
+				uint32_t ctrl_command,
+				enum pm_device_state *state,
 				pm_device_cb cb, void *arg)
 {
 	int ret = 0;
 
 	if (ctrl_command == PM_DEVICE_STATE_SET) {
-		uint32_t device_pm_state = *(uint32_t *)context;
 		uint16_t ps_conf;
 
 		ret = vcnl4040_read(dev, VCNL4040_REG_PS_CONF, &ps_conf);
@@ -238,7 +238,7 @@ static int vcnl4040_device_ctrl(const struct device *dev,
 		if (ret < 0)
 			return ret;
 #endif
-		if (device_pm_state == PM_DEVICE_STATE_ACTIVE) {
+		if (*state == PM_DEVICE_STATE_ACTIVE) {
 			/* Clear proximity shutdown */
 			ps_conf &= ~VCNL4040_PS_SD_MASK;
 
@@ -275,11 +275,11 @@ static int vcnl4040_device_ctrl(const struct device *dev,
 		}
 
 	} else if (ctrl_command == PM_DEVICE_STATE_GET) {
-		*((uint32_t *)context) = PM_DEVICE_STATE_ACTIVE;
+		*state = PM_DEVICE_STATE_ACTIVE;
 	}
 
 	if (cb) {
-		cb(dev, ret, context, arg);
+		cb(dev, ret, state, arg);
 	}
 
 	return ret;

@@ -263,7 +263,7 @@ DMA_STM32_EXPORT_API int dma_stm32_configure(const struct device *dev,
 	struct dma_stm32_stream *stream =
 				&dev_config->streams[id - STREAM_OFFSET];
 	DMA_TypeDef *dma = (DMA_TypeDef *)dev_config->base;
-	LL_DMA_InitTypeDef DMA_InitStruct;
+	LL_DMA_InitTypeDef DMA_InitStruct = {0};
 	int ret;
 
 	/* give channel from index 0 */
@@ -467,7 +467,9 @@ DMA_STM32_EXPORT_API int dma_stm32_configure(const struct device *dev,
 	 * the with dma V2 and dma mux,
 	 * the request ID is stored in the dma_slot
 	 */
+#if !defined(CONFIG_SOC_SERIES_STM32F0X) || defined(CONFIG_SOC_STM32F030XC)
 	DMA_InitStruct.PeriphRequest = config->dma_slot;
+#endif
 #endif
 	LL_DMA_Init(dma, dma_stm32_id_to_stream(id), &DMA_InitStruct);
 

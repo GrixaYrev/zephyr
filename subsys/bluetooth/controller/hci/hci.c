@@ -26,6 +26,7 @@
 
 #include "util/util.h"
 #include "util/memq.h"
+#include "util/mem.h"
 
 #include "hal/ecb.h"
 #include "hal/ccm.h"
@@ -1604,6 +1605,43 @@ static void le_big_terminate_sync(struct net_buf *buf, struct net_buf **evt,
 
 #if defined(CONFIG_BT_CONN)
 #if defined(CONFIG_BT_CENTRAL)
+
+static uint8_t check_cconn_params(bool ext, uint16_t scan_interval,
+				  uint16_t scan_window,
+				  uint16_t conn_interval_max,
+				  uint16_t conn_latency,
+				  uint16_t supervision_timeout)
+{
+	if (scan_interval < 0x0004 || scan_window < 0x0004 ||
+	    (!ext && (scan_interval > 0x4000 || scan_window > 0x4000))) {
+		return BT_HCI_ERR_INVALID_PARAM;
+	}
+
+	if (conn_interval_max < 0x0006 || conn_interval_max > 0x0C80) {
+		return BT_HCI_ERR_INVALID_PARAM;
+	}
+
+	if (conn_latency > 0x01F3) {
+		return BT_HCI_ERR_INVALID_PARAM;
+	}
+
+	if (supervision_timeout < 0x000A || supervision_timeout > 0x0C80) {
+		return BT_HCI_ERR_INVALID_PARAM;
+	}
+
+	/* sto * 10ms > (1 + lat) * ci * 1.25ms * 2
+	 * sto * 10 > (1 + lat) * ci * 2.5
+	 * sto * 2 > (1 + lat) * ci * 0.5
+	 * sto * 4 > (1 + lat) * ci
+	 */
+	if ((supervision_timeout << 2) <= ((1 + conn_latency) *
+					   conn_interval_max)) {
+		return BT_HCI_ERR_INVALID_PARAM;
+	}
+
+	return 0;
+}
+
 static void le_create_connection(struct net_buf *buf, struct net_buf **evt)
 {
 	struct bt_hci_cp_le_create_conn *cmd = (void *)buf->data;
@@ -1624,6 +1662,18 @@ static void le_create_connection(struct net_buf *buf, struct net_buf **evt)
 	conn_interval_max = sys_le16_to_cpu(cmd->conn_interval_max);
 	conn_latency = sys_le16_to_cpu(cmd->conn_latency);
 	supervision_timeout = sys_le16_to_cpu(cmd->supervision_timeout);
+
+	if (IS_ENABLED(CONFIG_BT_CTLR_PARAM_CHECK)) {
+		status = check_cconn_params(false, scan_interval,
+					    scan_window,
+					    conn_interval_max,
+					    conn_latency,
+					    supervision_timeout);
+		if (status) {
+			*evt = cmd_status(status);
+			return;
+		}
+	}
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 	status = ll_create_connection(scan_interval, scan_window,
@@ -2541,6 +2591,7 @@ static void le_df_set_cl_cte_enable(struct net_buf *buf, struct net_buf **evt)
 static void le_df_set_cl_iq_sampling_enable(struct net_buf *buf, struct net_buf **evt)
 {
 	struct bt_hci_cp_le_set_cl_cte_sampling_enable *cmd = (void *)buf->data;
+	struct bt_hci_rp_le_set_cl_cte_sampling_enable *rp;
 	uint16_t sync_handle;
 	uint8_t status;
 
@@ -2553,7 +2604,10 @@ static void le_df_set_cl_iq_sampling_enable(struct net_buf *buf, struct net_buf 
 						 cmd->switch_pattern_len,
 						 cmd->ant_ids);
 
-	*evt = cmd_complete_status(status);
+	rp = hci_cmd_complete(evt, sizeof(*rp));
+
+	rp->status = status;
+	rp->sync_handle = sys_cpu_to_le16(sync_handle);
 }
 
 static void le_df_connectionless_iq_report(struct pdu_data *pdu_rx,
@@ -2605,7 +2659,7 @@ static void le_df_connectionless_iq_report(struct pdu_data *pdu_rx,
 	sep->rssi_ant_id = iq_report->rssi_ant_id;
 	sep->cte_type = iq_report->cte_info.type;
 
-	sep->chan_idx = lll->data_chan_id;
+	sep->chan_idx = iq_report->chan_idx;
 	sep->per_evt_counter = sys_cpu_to_le16(lll->event_counter);
 
 	if (sep->cte_type == BT_HCI_LE_AOA_CTE) {
@@ -3222,7 +3276,7 @@ static void le_ext_create_connection(struct net_buf *buf, struct net_buf **evt)
 		return;
 	}
 
-	/* TODO: add parameter checks */
+	/* TODO: add additional parameter checks */
 
 	filter_policy = cmd->filter_policy;
 	own_addr_type = cmd->own_addr_type;
@@ -3257,6 +3311,18 @@ static void le_ext_create_connection(struct net_buf *buf, struct net_buf **evt)
 			conn_latency = sys_le16_to_cpu(p->conn_latency);
 			supervision_timeout =
 				sys_le16_to_cpu(p->supervision_timeout);
+
+			if (IS_ENABLED(CONFIG_BT_CTLR_PARAM_CHECK)) {
+				status = check_cconn_params(true, scan_interval,
+							    scan_window,
+							    conn_interval_max,
+							    conn_latency,
+							    supervision_timeout);
+				if (status) {
+					*evt = cmd_status(status);
+					return;
+				}
+			}
 
 			status = ll_create_connection(scan_interval,
 						      scan_window,
@@ -4826,6 +4892,7 @@ static void le_ext_adv_report(struct pdu_data *pdu_data,
 	uint8_t evt_type = 0U;
 	uint8_t *data = NULL;
 	uint8_t sec_phy = 0U;
+	uint8_t data_max_len;
 	uint8_t info_len;
 	int8_t rssi;
 
@@ -4952,9 +5019,13 @@ static void le_ext_adv_report(struct pdu_data *pdu_data,
 			       sys_le16_to_cpu(si->offs),
 			       si->offs_units,
 			       sys_le16_to_cpu(si->interval),
-			       (si->sca_chm[4] >> 5),
+			       ((si->sca_chm[PDU_SYNC_INFO_SCA_CHM_SCA_BYTE_OFFSET] &
+				 PDU_SYNC_INFO_SCA_CHM_SCA_BIT_MASK) >>
+				PDU_SYNC_INFO_SCA_CHM_SCA_BIT_POS),
 			       si->sca_chm[0], si->sca_chm[1], si->sca_chm[2],
-			       si->sca_chm[3], (si->sca_chm[4] & 0x3F),
+			       si->sca_chm[3],
+			       (si->sca_chm[PDU_SYNC_INFO_SCA_CHM_SCA_BYTE_OFFSET] &
+				~PDU_SYNC_INFO_SCA_CHM_SCA_BIT_MASK),
 			       sys_le32_to_cpu(si->aa),
 			       si->crc_init[0], si->crc_init[1],
 			       si->crc_init[2], sys_le16_to_cpu(si->evt_cntr));
@@ -5065,20 +5136,22 @@ no_ext_hdr:
 	/* FIXME: move most of below into above loop to dispatch fragments of
 	 * data in HCI event.
 	 */
+	data_max_len = ADV_REPORT_EVT_MAX_LEN -
+		       sizeof(struct bt_hci_evt_le_meta_event) -
+		       sizeof(*sep) - sizeof(*adv_info);
 
 	/* If data complete */
 	if (!data_status) {
-		uint8_t data_max_len;
-
-		data_max_len = ADV_REPORT_EVT_MAX_LEN - sizeof(*sep) -
-			       sizeof(*adv_info);
-
-		/* if data cannot fit the event, mark it as incomplete */
+		/* Only copy data that fit the event buffer size,
+		 * mark it as incomplete
+		 */
 		if (data_len > data_max_len) {
 			data_len = data_max_len;
 			data_status =
 				BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL;
 		}
+
+	/* else, data incomplete */
 	} else {
 		/* Data incomplete and no more to come */
 		if (!(adv_addr ||
@@ -5093,6 +5166,11 @@ no_ext_hdr:
 			 */
 			node_rx_extra_list_release(node_rx->hdr.rx_ftr.extra);
 			return;
+		}
+
+		/* Only copy data that fit the event buffer size */
+		if (data_len > data_max_len) {
+			data_len = data_max_len;
 		}
 	}
 
@@ -5248,10 +5326,11 @@ static void le_per_adv_sync_report(struct pdu_data *pdu_data,
 	struct node_rx_pdu *node_rx_next;
 	uint8_t total_data_len = 0U;
 	uint8_t data_status = 0U;
+	uint8_t cte_type = 0U;
 	uint8_t data_len = 0U;
 	uint8_t *data = NULL;
+	uint8_t data_max_len;
 	int8_t rssi;
-	uint8_t cte_type = 0U;
 
 	if (!(event_mask & BT_EVT_MASK_LE_META_EVENT) ||
 	    !(le_event_mask & BT_EVT_MASK_LE_PER_ADVERTISING_REPORT)) {
@@ -5284,12 +5363,12 @@ static void le_per_adv_sync_report(struct pdu_data *pdu_data,
 		       p->ext_hdr_len);
 
 		if (!p->ext_hdr_len) {
-			hdr_len = ptr - (uint8_t *)p;
+			hdr_len = PDU_AC_EXT_HEADER_SIZE_MIN;
 
 			goto no_ext_hdr;
 		}
 
-		ptr += sizeof(*h);
+		ptr = h->data;
 
 		/* No AdvA */
 		/* No TargetA */
@@ -5403,19 +5482,22 @@ no_ext_hdr:
 	/* FIXME: move most of below into above loop to dispatch fragments of
 	 * data in HCI event.
 	 */
+	data_max_len = ADV_REPORT_EVT_MAX_LEN -
+		       sizeof(struct bt_hci_evt_le_meta_event) -
+		       sizeof(*sep);
 
 	/* If data complete */
 	if (!data_status) {
-		uint8_t data_max_len;
-
-		data_max_len = ADV_REPORT_EVT_MAX_LEN - sizeof(*sep);
-
-		/* if data cannot fit the event, mark it as incomplete */
+		/* Only copy data that fit the event buffer size,
+		 * mark it as incomplete
+		 */
 		if (data_len > data_max_len) {
 			data_len = data_max_len;
 			data_status =
 				BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL;
 		}
+
+	/* else, data incomplete */
 	} else {
 		/* Data incomplete and no more to come */
 		if ((tx_pwr == BT_HCI_LE_ADV_TX_POWER_NO_PREF) && !data) {
@@ -5424,6 +5506,11 @@ no_ext_hdr:
 			 */
 			node_rx_extra_list_release(node_rx->hdr.rx_ftr.extra);
 			return;
+		}
+
+		/* Only copy data that fit the event buffer size */
+		if (data_len > data_max_len) {
+			data_len = data_max_len;
 		}
 	}
 
