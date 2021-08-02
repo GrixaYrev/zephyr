@@ -833,7 +833,7 @@ static void uart_nrfx_irq_tx_enable(const struct device *dev)
 	/* Indicate that this device started a transaction that should not be
 	 * interrupted by putting the SoC into the deep sleep mode.
 	 */
-	device_busy_set(dev);
+	pm_device_busy_set(dev);
 
 	/* Activate the transmitter. */
 	nrf_uart_task_trigger(uart0_addr, NRF_UART_TASK_STARTTX);
@@ -956,7 +956,7 @@ static void uart_nrfx_isr(const struct device *dev)
 		/* The transaction is over. It is okay to enter the deep sleep
 		 * mode if needed.
 		 */
-		device_busy_clear(dev);
+		pm_device_busy_clear(dev);
 
 		disable_tx_irq = false;
 
@@ -1160,7 +1160,7 @@ static void uart_nrfx_set_power_state(const struct device *dev,
 
 static int uart_nrfx_pm_control(const struct device *dev,
 				uint32_t ctrl_command,
-				enum pm_device_state *state, pm_device_cb cb, void *arg)
+				enum pm_device_state *state)
 {
 	static enum pm_device_state current_state = PM_DEVICE_STATE_ACTIVE;
 
@@ -1174,10 +1174,6 @@ static int uart_nrfx_pm_control(const struct device *dev,
 	} else {
 		__ASSERT_NO_MSG(ctrl_command == PM_DEVICE_STATE_GET);
 		*state = current_state;
-	}
-
-	if (cb) {
-		cb(dev, 0, state, arg);
 	}
 
 	return 0;

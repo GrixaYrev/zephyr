@@ -230,11 +230,34 @@ test_i2c_sx9500: sx9500@22 {
 	int-gpios = <&test_gpio 0 0>;
 };
 
+test_i2c_sgp40: sgp40@59 {
+	compatible = "sensirion,sgp40";
+	label = "SGP40";
+	reg = <0x59>;
+	enable-selftest;
+};
+
 test_i2c_sht3xd: sht3xd@23 {
 	compatible = "sensirion,sht3xd";
 	label = "SHT3XD";
 	reg = <0x23>;
 	alert-gpios = <&test_gpio 0 0>;
+};
+
+test_i2c_sht4xd: sht4x@44 {
+	compatible = "sensirion,sht4x";
+	reg = <0x44>;
+	label = "SHT4X";
+	repeatability = <2>;
+};
+
+test_i2c_shtc3: SHTC3@70 {
+	compatible = "sensirion,shtcx";
+	label = "SHTC3";
+	reg = <0x70>;
+	chip = "shtc3";
+	measure-mode = "normal";
+	clock-stretching;
 };
 
 test_i2c_si7006: si7006@24 {
@@ -627,4 +650,22 @@ test_i2c_sbc_gauge: sbsgauge@4d {
 	compatible = "sbs,sbs-gauge";
 	label = "SBSGAUGE";
 	reg = <0x4d>;
+};
+
+test_i2c_lm75: lm75@4e {
+	compatible = "lm75";
+	label = "LM75";
+	reg = <0x4e>;
+};
+
+test_i2c_ina23x: ina23x@4f {
+	compatible = "ti,ina23x";
+	label = "INA23X";
+	reg = <0x4f>;
+	config = <0>;
+	current_lsb = <1>;
+	rshunt = <0>;
+	mask = <0>;
+	alert_limit = <0>;
+	irq-gpios = <&test_gpio 0 0>;
 };

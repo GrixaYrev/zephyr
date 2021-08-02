@@ -1329,7 +1329,15 @@ static void uarte_nrfx_isr_async(const struct device *dev)
 		endrx_isr(dev);
 	}
 
-	if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_RXSTARTED)) {
+	/* RXSTARTED must be handled after ENDRX because it starts the RX timeout
+	 * and if order is swapped then ENDRX will stop this timeout.
+	 * Skip if ENDRX is set when RXSTARTED is set. It means that
+	 * ENDRX occurred after check for ENDRX in isr which may happen when
+	 * UARTE interrupt got preempted. Events are not cleared
+	 * and isr will be called again. ENDRX will be handled first.
+	 */
+	if (nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_RXSTARTED) &&
+	    !nrf_uarte_event_check(uarte, NRF_UARTE_EVENT_ENDRX)) {
 		nrf_uarte_event_clear(uarte, NRF_UARTE_EVENT_RXSTARTED);
 		rxstarted_isr(dev);
 	}
@@ -1918,7 +1926,7 @@ static void uarte_nrfx_set_power_state(const struct device *dev,
 
 static int uarte_nrfx_pm_control(const struct device *dev,
 				 uint32_t ctrl_command,
-				 enum pm_device_state *state, pm_device_cb cb, void *arg)
+				 enum pm_device_state *state)
 {
 	struct uarte_nrfx_data *data = get_dev_data(dev);
 
@@ -1931,10 +1939,6 @@ static int uarte_nrfx_pm_control(const struct device *dev,
 	} else {
 		__ASSERT_NO_MSG(ctrl_command == PM_DEVICE_STATE_GET);
 		*state = data->pm_state;
-	}
-
-	if (cb) {
-		cb(dev, 0, state, arg);
 	}
 
 	return 0;

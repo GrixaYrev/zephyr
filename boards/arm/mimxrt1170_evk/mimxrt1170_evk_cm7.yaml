@@ -18,3 +18,5 @@ supported:
   - gpio
   - counter
   - can
+  - spi
+  - adc

@@ -450,8 +450,7 @@ static int lis2mdl_set_power_state(struct lis2mdl_data *lis2mdl,
 		const struct lis2mdl_config *const config,
 		enum pm_device_state new_state)
 {
-	const struct lis2mdl_config *cfg = dev->config;
-	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&config->ctx;
 	int status = 0;
 
 	if (new_state == PM_DEVICE_STATE_ACTIVE) {
@@ -483,7 +482,7 @@ static int lis2mdl_set_power_state(struct lis2mdl_data *lis2mdl,
 }
 
 static int lis2mdl_pm_control(const struct device *dev, uint32_t ctrl_command,
-				enum pm_device_state *state, pm_device_cb cb, void *arg)
+				enum pm_device_state *state)
 {
 	struct lis2mdl_data *lis2mdl = dev->data;
 	const struct lis2mdl_config *const config = dev->config;
@@ -507,10 +506,6 @@ static int lis2mdl_pm_control(const struct device *dev, uint32_t ctrl_command,
 		status = -EINVAL;
 	}
 
-	if (cb) {
-		cb(dev, status, state, arg);
-	}
-
 	return status;
 }
 #endif /* CONFIG_PM_DEVICE */
@@ -527,7 +522,7 @@ static int lis2mdl_pm_control(const struct device *dev, uint32_t ctrl_command,
 #define LIS2MDL_DEVICE_INIT(inst)					\
 	DEVICE_DT_INST_DEFINE(inst,					\
 			    lis2mdl_init,				\
-			    NULL,					\
+			    lis2mdl_pm_control,				\
 			    &lis2mdl_data_##inst,			\
 			    &lis2mdl_config_##inst,			\
 			    POST_KERNEL,				\
