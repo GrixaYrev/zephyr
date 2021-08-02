@@ -11,6 +11,7 @@
 #include <soc.h>
 #include <fsl_pwm.h>
 #include <fsl_clock.h>
+#include <math.h>
 
 #define LOG_LEVEL CONFIG_PWM_LOG_LEVEL
 #include <logging/log.h>
@@ -63,7 +64,7 @@ static int mcux_pwm_pin_set(const struct device *dev, uint32_t pwm,
 		return -EINVAL;
 	}
 
-	duty_cycle = 100 * pulse_cycles / period_cycles;
+	duty_cycle = round(100.0 * (float)pulse_cycles / (float)period_cycles);
 
 	/* FIXME: Force re-setup even for duty-cycle update */
 	if (period_cycles != data->period_cycles[pwm]) {
