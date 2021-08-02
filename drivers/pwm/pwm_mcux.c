@@ -159,7 +159,7 @@ static const struct pwm_driver_api pwm_mcux_driver_api = {
 		.base = (void *)DT_REG_ADDR(DT_PARENT(DT_DRV_INST(n))),   \
 		.index = DT_INST_PROP(n, index),			  \
 		.mode = kPWM_EdgeAligned,				  \
-		.prescale = kPWM_Prescale_Divide_128,			  \
+		.prescale = DT_ENUM_IDX_OR(DT_DRV_INST(n), prescaler, kPWM_Prescale_Divide_128),			  \
 		.clock_source = kCLOCK_IpgClk,				  \
 	};								  \
 									  \

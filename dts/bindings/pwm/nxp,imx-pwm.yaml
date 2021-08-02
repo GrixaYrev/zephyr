@@ -19,6 +19,22 @@ properties:
     label:
       required: true
 
+    prescaler:
+      type: int
+      required: false
+      default: 128
+      enum:
+        - 1
+        - 2
+        - 4
+        - 8
+        - 16
+        - 32
+        - 64
+        - 128
+      description: |
+        Source clock prescaler
+
     "#pwm-cells":
       const: 1
 
