@@ -21,6 +21,8 @@ manifest:
   remotes:
     - name: upstream
       url-base: https://github.com/zephyrproject-rtos
+    - name: strim-git
+      url-base: http://gitlab.strim-tech.com
 
   #
   # Please add items below based on alphabetical order
@@ -87,9 +89,10 @@ manifest:
       path: modules/hal/nuvoton
       groups:
         - hal
-    - name: hal_nxp
-      revision: 3b45fbaae29640ced4eafdd9e63fe534ca1401ca
+    - name: zephyr/modules-rtos/hal-nxp
+      revision: e7e6b27ea7a9b464837e75028e8573877aab04e2
       path: modules/hal/nxp
+      remote: strim-git
       groups:
         - hal
     - name: hal_openisa
