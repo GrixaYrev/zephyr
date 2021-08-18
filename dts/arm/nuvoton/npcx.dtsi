@@ -69,6 +69,14 @@
 	};
 
 	soc {
+		bbram: bb-ram@400af000 {
+			compatible = "nuvoton,npcx-bbram";
+			reg = <0x400af000 0x80
+			       0x400af100 0x1>;
+			reg-names = "memory", "status";
+			label = "BBRAM";
+		};
+
 		pcc: clock-controller@4000d000 {
 			compatible = "nuvoton,npcx-pcc";
 			/* Cells for bus type, clock control reg and bit */
@@ -670,6 +678,10 @@
 	soc-id {
 		compatible = "nuvoton,npcx-soc-id";
 		family-id = <0x20>;
+	};
+
+	booter-variant {
+		compatible = "nuvoton,npcx-booter-variant";
 	};
 };
 

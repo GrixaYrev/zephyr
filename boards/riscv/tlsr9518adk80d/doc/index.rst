@@ -1,4 +1,4 @@
-.. _tlst9518adk80d:
+.. _tlsr9518adk80d:
 
 Telink TLSR9518ADK80D
 #####################
@@ -63,7 +63,13 @@ The Zephyr TLSR9518ADK80D board configuration supports the following hardware fe
 +----------------+------------+------------------------------+
 | UART           | on-chip    | serial                       |
 +----------------+------------+------------------------------+
+| PWM            | on-chip    | pwm                          |
++----------------+------------+------------------------------+
+| TRNG           | on-chip    | entopy                       |
++----------------+------------+------------------------------+
 | FLASH (MSPI)   | on-chip    | flash                        |
++----------------+------------+------------------------------+
+| RADIO          | on-chip    | ieee802154, OpenThread       |
 +----------------+------------+------------------------------+
 
 The following example projects are supported:
@@ -73,6 +79,8 @@ The following example projects are supported:
 - samples/philosophers
 - samples/basic/threads
 - samples/basic/blinky
+- samples/basic/blinky_pwm
+- samples/basic/fade_led
 - samples/basic/button
 - samples/subsys/nvs
 - samples/subsys/console/echo
@@ -81,6 +89,8 @@ The following example projects are supported:
 - samples/subsys/shell/shell_module
 - samples/subsys/cpp/cpp_synchronization
 - samples/drivers/flash_shell
+- samples/net/sockets/echo_client (OpenThread and IEEE802154)
+- samples/net/sockets/echo_server (OpenThread and IEEE802154)
 
 .. note::
    To support "button" example project PC3-KEY3 (J20-19, J20-20) jumper needs to be removed and KEY3 (J20-19) should be connected to VDD3_DCDC (J51-13) externally.
@@ -134,6 +144,7 @@ Peripheral's pins on the SoC are mapped to the following GPIO pins in the
 
 - UART0 RX: PB2, TX: PB3
 - UART1 RX: PC6, TX: PC7
+- PWM Channel 0: PB4
 
 Serial Port
 -----------

@@ -57,6 +57,11 @@ def main():
 
     setup_edtlib_logging()
 
+    if args.vendor_prefixes:
+        vendor_prefixes = edtlib.load_vendor_prefixes_txt(args.vendor_prefixes)
+    else:
+        vendor_prefixes = None
+
     try:
         edt = edtlib.EDT(args.dts, args.bindings_dirs,
                          # Suppress this warning if it's suppressed in dtc
@@ -64,8 +69,8 @@ def main():
                              "-Wno-simple_bus_reg" not in args.dtc_flags,
                          default_prop_types=True,
                          infer_binding_for_paths=["/zephyr,user"],
-                         err_on_deprecated_properties=
-                         args.err_on_deprecated_properties)
+                         werror=args.edtlib_Werror,
+                         vendor_prefixes=vendor_prefixes)
     except edtlib.EDTError as e:
         sys.exit(f"devicetree error: {e}")
 
@@ -209,8 +214,12 @@ def parse_args():
                         help="path to write device struct extern header to")
     parser.add_argument("--edt-pickle-out",
                         help="path to write pickled edtlib.EDT object to")
-    parser.add_argument("--err-on-deprecated-properties", action="store_true",
-                        help="if set, deprecated property usage is an error")
+    parser.add_argument("--vendor-prefixes",
+                        help="vendor-prefixes.txt path; used for validation")
+    parser.add_argument("--edtlib-Werror", action="store_true",
+                        help="if set, edtlib-specific warnings become errors. "
+                             "(this does not apply to warnings shared "
+                             "with dtc.)")
 
     return parser.parse_args()
 
@@ -673,10 +682,13 @@ def phandle_macros(prop, macro):
 
     if prop.type == "phandle":
         # A phandle is treated as a phandles with fixed length 1.
+        ret[f"{macro}"] = f"DT_{prop.val.z_path_id}"
+        ret[f"{macro}_IDX_0"] = f"DT_{prop.val.z_path_id}"
         ret[f"{macro}_IDX_0_PH"] = f"DT_{prop.val.z_path_id}"
         ret[f"{macro}_IDX_0_EXISTS"] = 1
     elif prop.type == "phandles":
         for i, node in enumerate(prop.val):
+            ret[f"{macro}_IDX_{i}"] = f"DT_{node.z_path_id}"
             ret[f"{macro}_IDX_{i}_PH"] = f"DT_{node.z_path_id}"
             ret[f"{macro}_IDX_{i}_EXISTS"] = 1
     elif prop.type == "phandle-array":
@@ -762,10 +774,24 @@ def write_global_compat_info(edt):
 
         ident = str2ident(compat)
         n_okay_macros[f"DT_N_INST_{ident}_NUM_OKAY"] = len(okay_nodes)
+
+        # Helpers for non-INST for-each macros that take node
+        # identifiers as arguments.
+        for_each_macros[f"DT_FOREACH_OKAY_{ident}(fn)"] = \
+            " ".join(f"fn(DT_{node.z_path_id})"
+                     for node in okay_nodes)
+        for_each_macros[f"DT_FOREACH_OKAY_VARGS_{ident}(fn, ...)"] = \
+            " ".join(f"fn(DT_{node.z_path_id}, __VA_ARGS__)"
+                     for node in okay_nodes)
+
+        # Helpers for INST versions of for-each macros, which take
+        # instance numbers. We emit separate helpers for these because
+        # avoiding an intermediate node_id --> instance number
+        # conversion in the preprocessor helps to keep the macro
+        # expansions simpler. That hopefully eases debugging.
         for_each_macros[f"DT_FOREACH_OKAY_INST_{ident}(fn)"] = \
             " ".join(f"fn({edt.compat2nodes[compat].index(node)})"
                      for node in okay_nodes)
-
         for_each_macros[f"DT_FOREACH_OKAY_INST_VARGS_{ident}(fn, ...)"] = \
             " ".join(f"fn({edt.compat2nodes[compat].index(node)}, __VA_ARGS__)"
                      for node in okay_nodes)

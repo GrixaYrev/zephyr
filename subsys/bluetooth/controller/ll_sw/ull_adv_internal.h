@@ -80,7 +80,7 @@ void ull_adv_done(struct node_rx_event_done *done);
 
 /* Helper functions to initialise and reset ull_adv_aux module */
 int ull_adv_aux_init(void);
-int ull_adv_aux_reset(void);
+int ull_adv_aux_reset_finalize(void);
 
 /* Return the aux set handle given the aux set instance */
 uint8_t ull_adv_aux_handle_get(struct ll_adv_aux_set *aux);
@@ -116,6 +116,12 @@ uint8_t ull_adv_aux_hdr_set_clear(struct ll_adv_set *adv,
 				  struct pdu_adv_adi *adi,
 				  uint8_t *pri_idx);
 
+/* helper to initialize extended advertising PDU */
+void ull_adv_sync_pdu_init(struct pdu_adv *pdu, uint8_t ext_hdr_flags);
+
+/* helper to add cte_info field to extended advertising header */
+uint8_t ull_adv_sync_pdu_cte_info_set(struct pdu_adv *pdu, const struct pdu_cte_info *cte_info);
+
 /* helper function to calculate common ext adv payload header length and
  * adjust the data pointer.
  * NOTE: This function reverts the header data pointer if there is no
@@ -150,6 +156,7 @@ void ull_adv_aux_ptr_fill(uint8_t **dptr, uint8_t phy_s);
 
 int ull_adv_sync_init(void);
 int ull_adv_sync_reset(void);
+int ull_adv_sync_reset_finalize(void);
 
 /* helper function to release periodic advertising instance */
 void ull_adv_sync_release(struct ll_adv_sync_set *sync);

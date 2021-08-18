@@ -208,7 +208,7 @@
 #define BT_CTLR_MAX_CONNECTABLE 1
 #endif
 #define BT_CTLR_MAX_CONN        CONFIG_BT_MAX_CONN
-#if defined(CONFIG_BT_CTLR_ADV_EXT) && defined(CONFIG_BT_CENTRAL)
+#if defined(CONFIG_BT_CTLR_ADV_EXT) && defined(CONFIG_BT_OBSERVER)
 #define BT_CTLR_ADV_EXT_RX_CNT  1
 #else
 #define BT_CTLR_ADV_EXT_RX_CNT  0
@@ -1640,6 +1640,19 @@ int ull_disable(void *lll)
 	hdr->disabled_param = &sem;
 	hdr->disabled_cb = disabled_cb;
 
+	/* ULL_HIGH can run after we have call `ull_ref_get` and it can
+	 * decrement the ref count. Hence, handle this race condition by
+	 * ensuring that `disabled_cb` has been set while the ref count is still
+	 * set.
+	 * No need to call `lll_disable` and take the semaphore thereafter if
+	 * reference count is zero.
+	 * If the `sem` is given when reference count was decremented, we do not
+	 * care.
+	 */
+	if (!ull_ref_get(hdr)) {
+		return 0;
+	}
+
 	mfy.param = lll;
 	ret = mayfly_enqueue(TICKER_USER_ID_THREAD, TICKER_USER_ID_LLL, 0,
 			     &mfy);
@@ -2282,7 +2295,8 @@ static void ull_done(void *param)
 
 		if (link) {
 			/* Process done event */
-			memq_dequeue(memq_ull_done.tail, &memq_ull_done.head, NULL);
+			(void)memq_dequeue(memq_ull_done.tail,
+					   &memq_ull_done.head, NULL);
 			rx_demux_event_done(link, done);
 		}
 	} while (link);
@@ -2301,7 +2315,7 @@ static inline int rx_demux_rx(memq_link_t *link, struct node_rx_hdr *rx)
 #if defined(CONFIG_BT_CTLR_LOW_LAT_ULL)
 	case NODE_RX_TYPE_EVENT_DONE:
 	{
-		memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
+		(void)memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
 		rx_demux_event_done(link, rx);
 	}
 	break;
@@ -2321,7 +2335,7 @@ static inline int rx_demux_rx(memq_link_t *link, struct node_rx_hdr *rx)
 	{
 		struct pdu_adv *adv;
 
-		memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
+		(void)memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
 
 		adv = (void *)((struct node_rx_pdu *)rx)->pdu;
 		if (adv->type != PDU_ADV_TYPE_EXT_IND) {
@@ -2333,13 +2347,20 @@ static inline int rx_demux_rx(memq_link_t *link, struct node_rx_hdr *rx)
 		ull_scan_aux_setup(link, rx);
 	}
 	break;
+
+	case NODE_RX_TYPE_EXT_AUX_RELEASE:
+	{
+		(void)memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
+		ull_scan_aux_release(link, rx);
+	}
+	break;
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 #endif /* CONFIG_BT_OBSERVER */
 
 #if defined(CONFIG_BT_CONN)
 	case NODE_RX_TYPE_CONNECTION:
 	{
-		memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
+		(void)memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
 		ull_conn_setup(link, rx);
 	}
 	break;
@@ -2353,7 +2374,7 @@ static inline int rx_demux_rx(memq_link_t *link, struct node_rx_hdr *rx)
 			return nack;
 		}
 
-		memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
+		(void)memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
 
 		if (rx) {
 			ll_rx_put(link, rx);
@@ -2394,7 +2415,7 @@ static inline int rx_demux_rx(memq_link_t *link, struct node_rx_hdr *rx)
 
 	case NODE_RX_TYPE_RELEASE:
 	{
-		memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
+		(void)memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
 		ll_rx_put(link, rx);
 		ll_rx_sched();
 	}
@@ -2411,7 +2432,7 @@ static inline int rx_demux_rx(memq_link_t *link, struct node_rx_hdr *rx)
 	case NODE_RX_TYPE_ISO_PDU:
 	{
 		/* Remove from receive-queue; ULL has received this now */
-		memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
+		(void)memq_dequeue(memq_ull_rx.tail, &memq_ull_rx.head, NULL);
 
 #if defined(CONFIG_BT_CTLR_CONN_ISO)
 		struct node_rx_pdu *rx_pdu = (struct node_rx_pdu *)rx;
@@ -2483,13 +2504,16 @@ static inline void rx_demux_event_done(memq_link_t *link,
 		break;
 #endif /* CONFIG_BT_CONN */
 
-#if defined(CONFIG_BT_CTLR_ADV_EXT)
 #if defined(CONFIG_BT_BROADCASTER)
+#if defined(CONFIG_BT_CTLR_ADV_EXT) || \
+	defined(CONFIG_BT_CTLR_JIT_SCHEDULING)
 	case EVENT_DONE_EXTRA_TYPE_ADV:
 		ull_adv_done(done);
 		break;
+#endif /* CONFIG_BT_CTLR_ADV_EXT || CONFIG_BT_CTLR_JIT_SCHEDULING */
 #endif /* CONFIG_BT_BROADCASTER */
 
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
 #if defined(CONFIG_BT_OBSERVER)
 	case EVENT_DONE_EXTRA_TYPE_SCAN:
 		ull_scan_done(done);
@@ -2551,4 +2575,16 @@ static inline void rx_demux_event_done(memq_link_t *link,
 static void disabled_cb(void *param)
 {
 	k_sem_give(param);
+}
+
+struct event_done_extra *ull_done_extra_type_set(uint8_t type)
+{
+	struct event_done_extra *extra;
+
+	extra = ull_event_done_extra_get();
+	LL_ASSERT(extra);
+
+	extra->type = type;
+
+	return extra;
 }

@@ -384,8 +384,7 @@ struct device {
 	const device_handle_t *const handles;
 #ifdef CONFIG_PM_DEVICE
 	/** Power Management function */
-	int (*pm_control)(const struct device *dev, uint32_t command,
-			  enum pm_device_state *state);
+	pm_device_control_callback_t pm_control;
 	/** Pointer to device instance power management data */
 	struct pm_device * const pm;
 #endif
@@ -664,6 +663,7 @@ static inline bool device_is_ready(const struct device *dev)
  */
 #define Z_DEVICE_DEFINE_PRE(node_id, dev_name, ...)			\
 	Z_DEVICE_DEFINE_HANDLES(node_id, dev_name, __VA_ARGS__)		\
+	Z_DEVICE_STATE_DEFINE(node_id, dev_name)			\
 	Z_DEVICE_DEFINE_PM_SLOT(dev_name)
 
 
@@ -714,7 +714,6 @@ BUILD_ASSERT(sizeof(device_handle_t) == 2, "fix the linker scripts");
  */
 #define Z_DEVICE_DEFINE(node_id, dev_name, drv_name, init_fn, pm_control_fn, \
 			data_ptr, cfg_ptr, level, prio, api_ptr, ...)	\
-	static struct device_state Z_DEVICE_STATE_NAME(dev_name);	\
 	Z_DEVICE_DEFINE_PRE(node_id, dev_name, __VA_ARGS__)		\
 	COND_CODE_1(DT_NODE_EXISTS(node_id), (), (static))		\
 		const Z_DECL_ALIGN(struct device)			\
@@ -733,10 +732,28 @@ BUILD_ASSERT(sizeof(device_handle_t) == 2, "fix the linker scripts");
 		(&DEVICE_NAME_GET(dev_name)), level, prio)
 
 #ifdef CONFIG_PM_DEVICE
-#define Z_DEVICE_DEFINE_PM_INIT(dev_name, pm_control_fn)		\
+/* Use of DT_PROP_OR here is because we cant assume that 'wakeup-source`
+ * will be a defined property for the binding of the devicetree node that
+ * is associated with the device
+ */
+#define Z_DEVICE_STATE_DEFINE(node_id, dev_name)			\
+	static struct device_state Z_DEVICE_STATE_NAME(dev_name) = {	\
+		.pm = {						        \
+			.flags = ATOMIC_INIT(COND_CODE_1(		\
+					DT_NODE_EXISTS(node_id),	\
+					(DT_PROP_OR(			\
+					node_id, wakeup_source, 0)),	\
+					(0)) <<			        \
+				PM_DEVICE_FLAGS_WS_CAPABLE),		\
+		},                                                      \
+	};
+
+#define Z_DEVICE_DEFINE_PM_INIT(dev_name, pm_control_fn)	\
 	.pm_control = (pm_control_fn),				\
 	.pm = &Z_DEVICE_STATE_NAME(dev_name).pm,
 #else
+#define Z_DEVICE_STATE_DEFINE(node_id, dev_name) \
+	static struct device_state Z_DEVICE_STATE_NAME(dev_name);
 #define Z_DEVICE_DEFINE_PM_INIT(dev_name, pm_control_fn)
 #endif
 

@@ -33,6 +33,7 @@
 #include "lll_adv.h"
 #include "lll_adv_pdu.h"
 #include "lll_adv_aux.h"
+#include "lll_adv_sync.h"
 #include "lll_conn.h"
 #include "lll_chan.h"
 #include "lll_filter.h"
@@ -43,6 +44,8 @@
 #include "lll_adv_internal.h"
 #include "lll_prof_internal.h"
 #include "lll_df_internal.h"
+
+#include "ull_internal.h"
 
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
 #define LOG_MODULE_NAME bt_ctlr_lll_adv
@@ -82,9 +85,10 @@ static inline bool isr_rx_ci_adva_check(uint8_t tx_addr, uint8_t *addr,
 					struct pdu_adv *ci);
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
-#define PAYLOAD_FRAG_COUNT   ((CONFIG_BT_CTLR_ADV_DATA_LEN_MAX + \
-			       PDU_AC_PAYLOAD_SIZE_MAX - 1) / \
-			      PDU_AC_PAYLOAD_SIZE_MAX)
+#define PAYLOAD_BASED_FRAG_COUNT ((CONFIG_BT_CTLR_ADV_DATA_LEN_MAX + \
+				   PDU_AC_PAYLOAD_SIZE_MAX - 1) / \
+				  PDU_AC_PAYLOAD_SIZE_MAX)
+#define PAYLOAD_FRAG_COUNT MAX(PAYLOAD_BASED_FRAG_COUNT, BT_CTLR_DF_PER_ADV_CTE_NUM_MAX)
 #define BT_CTLR_ADV_AUX_SET  CONFIG_BT_CTLR_ADV_AUX_SET
 #if defined(CONFIG_BT_CTLR_ADV_PERIODIC)
 #define BT_CTLR_ADV_SYNC_SET CONFIG_BT_CTLR_ADV_SYNC_SET
@@ -159,6 +163,12 @@ int lll_adv_init(void)
 		return err;
 	}
 #endif /* BT_CTLR_ADV_AUX_SET > 0 */
+#if defined(CONFIG_BT_CTLR_ADV_PERIODIC)
+	err = lll_adv_sync_init();
+	if (err) {
+		return err;
+	}
+#endif /* CONFIG_BT_CTLR_ADV_PERIODIC */
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 
 	err = init_reset();
@@ -180,6 +190,12 @@ int lll_adv_reset(void)
 		return err;
 	}
 #endif /* BT_CTLR_ADV_AUX_SET > 0 */
+#if defined(CONFIG_BT_CTLR_ADV_PERIODIC)
+	err = lll_adv_sync_reset();
+	if (err) {
+		return err;
+	}
+#endif /* CONFIG_BT_CTLR_ADV_PERIODIC */
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 
 	err = init_reset();
@@ -257,9 +273,13 @@ struct pdu_adv *lll_adv_pdu_alloc(struct lll_adv_pdu *pdu, uint8_t *idx)
 	uint8_t first, last;
 	void *p;
 
+	/* TODO: Make this unique mechanism to update last element in double
+	 *       buffer a re-usable utility function.
+	 */
 	first = pdu->first;
 	last = pdu->last;
 	if (first == last) {
+		/* Return the index of next free PDU in the double buffer */
 		last++;
 		if (last == DOUBLE_BUFFER_SIZE) {
 			last = 0U;
@@ -267,10 +287,23 @@ struct pdu_adv *lll_adv_pdu_alloc(struct lll_adv_pdu *pdu, uint8_t *idx)
 	} else {
 		uint8_t first_latest;
 
+		/* LLL has not consumed the first PDU. Revert back the `last` so
+		 * that LLL still consumes the first PDU while the caller of
+		 * this function updates/modifies the latest PDU.
+		 *
+		 * Under race condition:
+		 * 1. LLL runs before `pdu->last` is reverted, then `pdu->first`
+		 *    has changed, hence restore `pdu->last` and return index of
+		 *    next free PDU in the double buffer.
+		 * 2. LLL runs after `pdu->last` is reverted, then `pdu->first`
+		 *    will not change, return the saved `last` as the index of
+		 *    the next free PDU in the double buffer.
+		 */
 		pdu->last = first;
 		cpu_dmb();
 		first_latest = pdu->first;
 		if (first_latest != first) {
+			pdu->last = last;
 			last++;
 			if (last == DOUBLE_BUFFER_SIZE) {
 				last = 0U;
@@ -493,12 +526,35 @@ struct pdu_adv *lll_adv_pdu_and_extra_data_latest_get(struct lll_adv_pdu *pdu,
 		uint8_t pdu_idx;
 		void *p;
 
-		if (!MFIFO_ENQUEUE_IDX_GET(pdu_free, &pdu_free_idx)) {
-			return NULL;
-		}
-
 		pdu_idx = first;
+		p = pdu->pdu[pdu_idx];
 		ed = pdu->extra_data[pdu_idx];
+
+		do {
+			void *next;
+
+			/* Store partial list in current data index if there is
+			 * no free slot in mfifo. It can be released on next
+			 * switch attempt (on next event).
+			 */
+			if (!MFIFO_ENQUEUE_IDX_GET(pdu_free, &pdu_free_idx)) {
+				pdu->pdu[pdu_idx] = p;
+				return NULL;
+			}
+
+#if defined(CONFIG_BT_CTLR_ADV_PDU_LINK)
+			next = lll_adv_pdu_linked_next_get(p);
+#else
+			next = NULL;
+#endif
+
+			MFIFO_BY_IDX_ENQUEUE(pdu_free, pdu_free_idx, p);
+			k_sem_give(&sem_pdu_free);
+
+			p = next;
+		} while (p);
+
+		pdu->pdu[pdu_idx] = NULL;
 
 		if (ed && (!MFIFO_ENQUEUE_IDX_GET(extra_data_free,
 						  &ed_free_idx))) {
@@ -516,11 +572,7 @@ struct pdu_adv *lll_adv_pdu_and_extra_data_latest_get(struct lll_adv_pdu *pdu,
 		pdu->first = first;
 		*is_modified = 1U;
 
-		p = pdu->pdu[pdu_idx];
 		pdu->pdu[pdu_idx] = NULL;
-
-		MFIFO_BY_IDX_ENQUEUE(pdu_free, pdu_free_idx, p);
-		k_sem_give(&sem_pdu_free);
 
 		if (ed) {
 			pdu->extra_data[pdu_idx] = NULL;
@@ -1176,14 +1228,9 @@ static void isr_done(void *param)
 	}
 #endif /* CONFIG_BT_CTLR_ADV_INDICATION */
 
-#if defined(CONFIG_BT_CTLR_ADV_EXT)
-	struct event_done_extra *extra;
-
-	extra = ull_event_done_extra_get();
-	LL_ASSERT(extra);
-
-	extra->type = EVENT_DONE_EXTRA_TYPE_ADV;
-#endif  /* CONFIG_BT_CTLR_ADV_EXT */
+#if defined(CONFIG_BT_CTLR_ADV_EXT) || defined(CONFIG_BT_CTLR_JIT_SCHEDULING)
+	ull_done_extra_type_set(EVENT_DONE_EXTRA_TYPE_ADV);
+#endif /* CONFIG_BT_CTLR_ADV_EXT || CONFIG_BT_CTLR_JIT_SCHEDULING */
 
 	lll_isr_cleanup(param);
 }

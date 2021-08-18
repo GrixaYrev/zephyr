@@ -202,6 +202,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	lll = p->param;
 
 	/* FIXME: get latest only when primary PDU without Aux PDUs */
+	upd = 0U;
 	sec_pdu = lll_adv_aux_data_latest_get(lll, &upd);
 	LL_ASSERT(sec_pdu);
 
@@ -361,7 +362,7 @@ static void isr_tx(void *param)
 
 	/* setup tIFS switching */
 	radio_tmr_tifs_set(EVENT_IFS_US);
-	radio_switch_complete_and_tx(lll->phy_s, 0, lll->phy_s, 0);
+	radio_switch_complete_and_tx(lll->phy_s, 0, lll->phy_s, 1);
 
 	radio_pkt_rx_set(radio_pkt_scratch_get());
 	/* assert if radio packet ptr is not set and radio started rx */

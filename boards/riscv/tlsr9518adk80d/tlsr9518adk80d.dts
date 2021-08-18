@@ -16,6 +16,8 @@
 		led0 = &led_blue;
 		led1 = &led_green;
 		sw0 = &key_1;
+		pwm-led0 = &pwm_led_blue;
+		pwm-0 = &pwm0;
 	};
 
 	leds {
@@ -42,6 +44,15 @@
 		};
 	};
 
+	pwm_leds {
+		compatible = "pwm-leds";
+
+		pwm_led_blue: pwm_led_0 {
+			pwms = <&pwm0 0 0>;
+			label = "PWM LED Blue";
+		};
+	};
+
 	keys {
 		compatible = "gpio-keys";
 		key_1: button_1 {
@@ -56,6 +67,7 @@
 		zephyr,sram = &ram_dlm;
 		zephyr,flash = &flash;
 		zephyr,flash-controller = &flash_mspi;
+		zephyr,entropy = &trng0;
 	};
 };
 
@@ -93,6 +105,20 @@
 	status = "okay";
 	current-speed = <115200>;
 	pinctrl-0 = <&uart0_tx_pb2 &uart0_rx_pb3>;
+};
+
+&trng0 {
+	status = "okay";
+};
+
+&ieee802154 {
+	status = "okay";
+};
+
+&pwm0 {
+	status = "okay";
+	clock-frequency = <93750>;
+	pinctrl-0 = <&pwm_ch0_pb4>;
 };
 
 &flash_mspi {
