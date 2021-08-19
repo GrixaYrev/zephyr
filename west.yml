@@ -89,7 +89,8 @@ manifest:
       path: modules/hal/nuvoton
       groups:
         - hal
-    - name: zephyr/modules-rtos/hal-nxp
+    - name: hal_nxp
+      repo-path: zephyr/modules-rtos/hal-nxp
       revision: e7e6b27ea7a9b464837e75028e8573877aab04e2
       path: modules/hal/nxp
       remote: strim-git
