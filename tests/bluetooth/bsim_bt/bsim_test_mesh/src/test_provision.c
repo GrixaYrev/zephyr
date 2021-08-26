@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "mesh_test.h"
+#include "mesh/net.h"
+#include "argparse.h"
 
 #include <sys/byteorder.h>
 
@@ -28,7 +30,6 @@ enum test_flags {
 static ATOMIC_DEFINE(flags, TEST_FLAGS);
 extern const struct bt_mesh_comp comp;
 extern const uint8_t test_net_key[16];
-extern uint global_device_nbr;
 
 /* Timeout semaphore */
 static struct k_sem prov_sem;
@@ -41,7 +42,7 @@ static uint8_t dev_uuid[16] = { 0x6c, 0x69, 0x6e, 0x67, 0x61, 0x6f };
 static void test_device_init(void)
 {
 	/* Ensure that the UUID is unique: */
-	dev_uuid[6] = '0' + global_device_nbr;
+	dev_uuid[6] = '0' + get_device_nbr();
 
 	bt_mesh_test_cfg_set(NULL, WAIT_TIME);
 }
@@ -172,6 +173,52 @@ static void test_provisioner_pb_adv_multi(void)
 	PASS();
 }
 
+/** @brief Verify that when the IV Update flag is set to zero at the
+ * time of provisioning, internal IV update counter is also zero.
+ */
+static void test_provisioner_iv_update_flag_zero(void)
+{
+	int err;
+	uint8_t flags = 0x00;
+
+	bt_mesh_device_setup();
+
+	err = bt_mesh_provision(test_net_key, 0, flags, 0, 0x0001, dev_key);
+	ASSERT_OK(err, "Provisioning failed (err %d)", err);
+
+	if (bt_mesh.ivu_duration != 0) {
+		FAIL("IV Update duration counter is not 0 when IV Update flag is zero");
+	}
+
+	PASS();
+}
+
+/** @brief Verify that when the IV Update flag is set to one at the
+ * time of provisioning, internal IV update counter is set to 96 hours.
+ */
+static void test_provisioner_iv_update_flag_one(void)
+{
+	int err;
+	uint8_t flags = 0x02; /* IV Update flag bit set to 1 */
+
+	bt_mesh_device_setup();
+
+	err = bt_mesh_provision(test_net_key, 0, flags, 0, 0x0001, dev_key);
+	ASSERT_OK(err, "Provisioning failed (err %d)", err);
+
+	if (bt_mesh.ivu_duration != 96) {
+		FAIL("IV Update duration counter is not 96 when IV Update flag is one");
+	}
+
+	bt_mesh_reset();
+
+	if (bt_mesh.ivu_duration != 0) {
+		FAIL("IV Update duration counter is not reset to 0");
+	}
+
+	PASS();
+}
+
 #define TEST_CASE(role, name, description)                                     \
 	{                                                                      \
 		.test_id = "prov_" #role "_" #name, .test_descr = description, \
@@ -188,6 +235,10 @@ static const struct bst_test_instance test_connect[] = {
 		  "Provisioner: pb-adv provisioning use no-oob method"),
 	TEST_CASE(provisioner, pb_adv_multi,
 		  "Provisioner: pb-adv provisioning multiple devices"),
+	TEST_CASE(provisioner, iv_update_flag_zero,
+		  "Provisioner: effect on ivu_duration when IV Update flag is set to zero"),
+	TEST_CASE(provisioner, iv_update_flag_one,
+		  "Provisioner: effect on ivu_duration when IV Update flag is set to one"),
 
 	BSTEST_END_MARKER
 };

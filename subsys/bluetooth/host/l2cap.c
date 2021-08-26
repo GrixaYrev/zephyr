@@ -1235,7 +1235,7 @@ static void le_ecred_reconf_req(struct bt_l2cap *l2cap, uint8_t ident,
 	uint16_t mtu, mps;
 	uint16_t scid, result = BT_L2CAP_RECONF_SUCCESS;
 	int chan_count = 0;
-	bool mps_reduced;
+	bool mps_reduced = false;
 
 	if (buf->len < sizeof(*req)) {
 		BT_ERR("Too small ecred reconf req packet size");
@@ -1295,9 +1295,9 @@ static void le_ecred_reconf_req(struct bt_l2cap *l2cap, uint8_t ident,
 		goto response;
 	}
 
-	while (chan_count-- >= 0) {
-		BT_L2CAP_LE_CHAN(chans[chan_count])->tx.mtu = mtu;
-		BT_L2CAP_LE_CHAN(chans[chan_count])->tx.mps = mps;
+	for (int i = 0; i < chan_count; i++) {
+		BT_L2CAP_LE_CHAN(chans[i])->tx.mtu = mtu;
+		BT_L2CAP_LE_CHAN(chans[i])->tx.mps = mps;
 	}
 
 	BT_DBG("mtu %u mps %u", mtu, mps);

@@ -299,7 +299,8 @@ void ull_scan_aux_setup(memq_link_t *link, struct node_rx_hdr *rx)
 #endif /* CONFIG_BT_CTLR_SYNC_PERIODIC */
 	}
 
-	if (!aux_ptr || !aux_ptr->offs) {
+	if (!aux_ptr || !aux_ptr->offs ||
+	    (aux_ptr->phy > EXT_ADV_AUX_PHY_LE_CODED)) {
 		goto ull_scan_aux_rx_flush;
 	}
 
@@ -367,7 +368,7 @@ void ull_scan_aux_setup(memq_link_t *link, struct node_rx_hdr *rx)
 
 	/* Calculate the aux offset from start of the scan window */
 	aux_offset_us += ftr->radio_end_us;
-	aux_offset_us -= PKT_AC_US(pdu->len, phy);
+	aux_offset_us -= PDU_AC_US(pdu->len, phy, ftr->phy_flags);
 	aux_offset_us -= EVENT_JITTER_US;
 	aux_offset_us -= ready_delay_us;
 	aux_offset_us -= window_widening_us;
@@ -381,8 +382,8 @@ void ull_scan_aux_setup(memq_link_t *link, struct node_rx_hdr *rx)
 	aux->ull.ticks_slot =
 		HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US +
 				       ready_delay_us +
-				       PKT_AC_US(PDU_AC_EXT_PAYLOAD_SIZE_MAX,
-						 lll_aux->phy) +
+				       PDU_AC_MAX_US(PDU_AC_EXT_PAYLOAD_SIZE_MAX,
+						     lll_aux->phy) +
 				       EVENT_OVERHEAD_END_US);
 
 	ticks_slot_offset = MAX(aux->ull.ticks_active_to_start,

@@ -791,6 +791,26 @@ static void read_supported_commands(struct net_buf *buf, struct net_buf **evt)
 	rp->commands[39] |= BIT(2);
 #endif /* CONFIG_BT_CTLR_PRIVACY */
 
+#if defined(CONFIG_BT_CTLR_DF)
+#if defined(CONFIG_BT_CTLR_DF_ADV_CTE_TX)
+	/* LE Set Connectionless CTE Transmit Parameters,
+	 * LE Set Connectionless CTE Transmit Enable
+	 */
+	rp->commands[39] |= BIT(5) | BIT(6);
+#endif /* CONFIG_BT_CTLR_DF_ADV_CTE_TX */
+#if defined(CONFIG_BT_CTLR_DF_SCAN_CTE_RX)
+	/* LE Set Connectionless IQ Sampling Enable */
+	rp->commands[39] |= BIT(7);
+#endif /* CONFIG_BT_CTLR_DF_SCAN_CTE_RX */
+	/* LE Read Antenna Information */
+	rp->commands[40] |= BIT(4);
+#endif /* CONFIG_BT_CTLR_DF */
+
+#if defined(CONFIG_BT_CTLR_SYNC_PERIODIC)
+	/* LE Set Periodic Advertising Receive Enable */
+	rp->commands[40] |= BIT(5);
+#endif /* CONFIG_BT_CTLR_SYNC_PERIODIC */
+
 #if defined(CONFIG_BT_HCI_RAW) && defined(CONFIG_BT_TINYCRYPT_ECC)
 	bt_hci_ecc_supported_commands(rp->commands);
 #endif /* CONFIG_BT_HCI_RAW && CONFIG_BT_TINYCRYPT_ECC */
@@ -2707,8 +2727,47 @@ static void le_df_set_conn_cte_tx_params(struct net_buf *buf,
 
 	status = ll_df_set_conn_cte_tx_params(handle, cmd->cte_types,
 					      cmd->switch_pattern_len,
-					      cmd->ant_id);
+					      cmd->ant_ids);
 
+	rp = hci_cmd_complete(evt, sizeof(*rp));
+
+	rp->status = status;
+	rp->handle = handle_le16;
+}
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_RSP */
+
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_REQ)
+static void le_df_set_conn_cte_rx_params(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_set_conn_cte_rx_params *cmd = (void *)buf->data;
+	struct bt_hci_rp_le_set_conn_cte_rx_params *rp;
+	uint16_t handle, handle_le16;
+	uint8_t status;
+
+	handle_le16 = cmd->handle;
+	handle = sys_le16_to_cpu(handle_le16);
+
+	status = ll_df_set_conn_cte_rx_params(handle, cmd->sampling_enable, cmd->slot_durations,
+					      cmd->switch_pattern_len, cmd->ant_ids);
+
+	rp = hci_cmd_complete(evt, sizeof(*rp));
+
+	rp->status = status;
+	rp->handle = handle_le16;
+}
+
+static void le_df_set_conn_cte_req_enable(struct net_buf *buf, struct net_buf **evt)
+{
+	struct bt_hci_cp_le_conn_cte_req_enable *cmd = (void *)buf->data;
+	struct bt_hci_rp_le_conn_cte_req_enable *rp;
+	uint16_t handle, handle_le16;
+	uint8_t status;
+
+	handle_le16 = cmd->handle;
+	handle = sys_le16_to_cpu(handle_le16);
+
+	status = ll_df_set_conn_cte_req_enable(handle, cmd->enable, cmd->cte_request_interval,
+					       cmd->requested_cte_length, cmd->requested_cte_type);
 	rp = hci_cmd_complete(evt, sizeof(*rp));
 
 	rp->status = status;
@@ -3879,6 +3938,14 @@ static int controller_cmd_handle(uint16_t  ocf, struct net_buf *cmd,
 		le_df_set_conn_cte_tx_params(cmd, evt);
 		break;
 #endif /* CONFIG_BT_CTLR_DF_CONN_CTE_RSP */
+#if defined(CONFIG_BT_CTLR_DF_CONN_CTE_REQ)
+	case BT_OCF(BT_HCI_OP_LE_SET_CONN_CTE_RX_PARAMS):
+		le_df_set_conn_cte_rx_params(cmd, evt);
+		break;
+	case BT_OCF(BT_HCI_OP_LE_CONN_CTE_REQ_ENABLE):
+		le_df_set_conn_cte_req_enable(cmd, evt);
+		break;
+#endif /* CONFIG_BT_CTLR_DF_CONN_CTE_REQ */
 #endif /* CONFIG_BT_CTLR_DF */
 
 #if defined(CONFIG_BT_CTLR_DTM_HCI)
@@ -5089,19 +5156,28 @@ static void le_ext_adv_report(struct pdu_data *pdu_data,
 		}
 
 		if (h->aux_ptr) {
-			struct pdu_adv_aux_ptr *aux;
+			struct pdu_adv_aux_ptr *aux_ptr;
 			uint8_t aux_phy;
 
-			aux = (void *)ptr;
-			ptr += sizeof(*aux);
+			aux_ptr = (void *)ptr;
+			if (aux_ptr->phy > EXT_ADV_AUX_PHY_LE_CODED) {
+				struct node_rx_ftr *ftr;
 
-			sec_phy_curr = aux->phy + 1;
+				ftr = &node_rx->hdr.rx_ftr;
+				node_rx_extra_list_release(ftr->extra);
+				return;
+			}
 
-			aux_phy = BIT(aux->phy);
+			ptr += sizeof(*aux_ptr);
+
+			sec_phy_curr = aux_ptr->phy + 1;
+
+			aux_phy = BIT(aux_ptr->phy);
 
 			BT_DBG("    AuxPtr chan_idx = %u, ca = %u, offs_units "
-			       "= %u offs = 0x%x, phy = 0x%x", aux->chan_idx,
-			       aux->ca, aux->offs_units, aux->offs, aux_phy);
+			       "= %u offs = 0x%x, phy = 0x%x",
+			       aux_ptr->chan_idx, aux_ptr->ca,
+			       aux_ptr->offs_units, aux_ptr->offs, aux_phy);
 		}
 
 		if (h->sync_info) {
@@ -5514,19 +5590,28 @@ static void le_per_adv_sync_report(struct pdu_data *pdu_data,
 
 		/* AuxPtr */
 		if (h->aux_ptr) {
-			struct pdu_adv_aux_ptr *aux;
+			struct pdu_adv_aux_ptr *aux_ptr;
 			uint8_t aux_phy;
 
-			aux = (void *)ptr;
-			ptr += sizeof(*aux);
+			aux_ptr = (void *)ptr;
+			if (aux_ptr->phy > EXT_ADV_AUX_PHY_LE_CODED) {
+				struct node_rx_ftr *ftr;
 
-			sec_phy_curr = aux->phy + 1;
+				ftr = &node_rx->hdr.rx_ftr;
+				node_rx_extra_list_release(ftr->extra);
+				return;
+			}
 
-			aux_phy = BIT(aux->phy);
+			ptr += sizeof(*aux_ptr);
+
+			sec_phy_curr = aux_ptr->phy + 1;
+
+			aux_phy = BIT(aux_ptr->phy);
 
 			BT_DBG("    AuxPtr chan_idx = %u, ca = %u, offs_units "
-			       "= %u offs = 0x%x, phy = 0x%x", aux->chan_idx,
-			       aux->ca, aux->offs_units, aux->offs, aux_phy);
+			       "= %u offs = 0x%x, phy = 0x%x",
+			       aux_ptr->chan_idx, aux_ptr->ca,
+			       aux_ptr->offs_units, aux_ptr->offs, aux_phy);
 		}
 
 		/* No SyncInfo */

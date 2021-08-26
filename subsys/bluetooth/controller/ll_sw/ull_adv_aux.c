@@ -254,15 +254,6 @@ uint8_t ll_adv_aux_sr_data_set(uint8_t handle, uint8_t op, uint8_t frag_pref, ui
 		return BT_HCI_ERR_CMD_DISALLOWED;
 	}
 
-	/* If no length is provided, discard data */
-	if (!len) {
-		sr_pdu = lll_adv_scan_rsp_alloc(lll, &idx);
-		sr_pdu->type = PDU_ADV_TYPE_AUX_SCAN_RSP;
-		sr_pdu->len = 0;
-
-		goto sr_data_set_did_update;
-	}
-
 	/* Update scan response PDU fields. */
 	sr_pdu = lll_adv_scan_rsp_alloc(lll, &idx);
 	sr_pdu->type = PDU_ADV_TYPE_AUX_SCAN_RSP;
@@ -271,6 +262,11 @@ uint8_t ll_adv_aux_sr_data_set(uint8_t handle, uint8_t op, uint8_t frag_pref, ui
 	sr_pdu->tx_addr = aux_pdu->tx_addr;
 	sr_pdu->rx_addr = 0;
 	sr_pdu->len = 0;
+
+	/* If no length is provided, discard data */
+	if (!len) {
+		goto sr_data_set_did_update;
+	}
 
 	sr_com_hdr = &sr_pdu->adv_ext_ind;
 	sr_hdr = (void *)&sr_com_hdr->ext_hdr_adv_data[0];
@@ -1088,6 +1084,22 @@ struct pdu_adv_aux_ptr *ull_adv_aux_lll_offset_fill(uint32_t ticks_offset,
 	return aux;
 }
 
+void ull_adv_aux_done(struct node_rx_event_done *done)
+{
+	struct lll_adv_aux *lll_aux;
+	struct ll_adv_aux_set *aux;
+	struct ll_adv_set *adv;
+
+	/* Get reference to ULL context */
+	aux = CONTAINER_OF(done->param, struct ll_adv_aux_set, ull);
+	lll_aux = &aux->lll;
+	adv = HDR_LLL2ULL(lll_aux->adv);
+
+	/* Call the primary channel advertising done */
+	done->param = &adv->ull;
+	ull_adv_done(done);
+}
+
 static int init_reset(void)
 {
 	/* Initialize adv aux pool. */
@@ -1117,25 +1129,25 @@ static uint16_t aux_time_get(struct ll_adv_aux_set *aux, struct pdu_adv *pdu,
 
 	lll_aux = &aux->lll;
 	lll = lll_aux->adv;
-	time_us = PKT_AC_US(pdu->len, lll->phy_s) + EVENT_OVERHEAD_START_US +
-		  EVENT_OVERHEAD_END_US;
+	time_us = PDU_AC_US(pdu->len, lll->phy_s, lll->phy_flags) +
+		  EVENT_OVERHEAD_START_US + EVENT_OVERHEAD_END_US;
 
 	if ((pdu->adv_ext_ind.adv_mode & BT_HCI_LE_ADV_PROP_CONN) ==
 	    BT_HCI_LE_ADV_PROP_CONN) {
 		const uint16_t conn_req_us =
-			PKT_AC_US((INITA_SIZE + ADVA_SIZE + LLDATA_SIZE),
-				  lll->phy_s);
+			PDU_AC_MAX_US((INITA_SIZE + ADVA_SIZE + LLDATA_SIZE),
+				      lll->phy_s);
 		const uint16_t conn_rsp_us =
-			PKT_AC_US((PDU_AC_EXT_HEADER_SIZE_MIN + ADVA_SIZE +
-				   TARGETA_SIZE), lll->phy_s);
+			PDU_AC_US((PDU_AC_EXT_HEADER_SIZE_MIN + ADVA_SIZE +
+				   TARGETA_SIZE), lll->phy_s, lll->phy_flags);
 
 		time_us += EVENT_IFS_MAX_US * 2 + conn_req_us + conn_rsp_us;
 	} else if ((pdu->adv_ext_ind.adv_mode & BT_HCI_LE_ADV_PROP_SCAN) ==
 		   BT_HCI_LE_ADV_PROP_SCAN) {
 		const uint16_t scan_req_us  =
-			PKT_AC_US((SCANA_SIZE + ADVA_SIZE), lll->phy_s);
+			PDU_AC_MAX_US((SCANA_SIZE + ADVA_SIZE), lll->phy_s);
 		const uint16_t scan_rsp_us =
-			PKT_AC_US(pdu_scan->len, lll->phy_s);
+			PDU_AC_US(pdu_scan->len, lll->phy_s, lll->phy_flags);
 
 		time_us += EVENT_IFS_MAX_US * 2 + scan_req_us + scan_rsp_us;
 	}
