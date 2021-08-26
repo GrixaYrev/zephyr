@@ -281,16 +281,17 @@ struct node_rx_ftr {
 	uint32_t radio_end_us;
 	uint8_t  rssi;
 #if defined(CONFIG_BT_CTLR_ADV_EXT) && defined(CONFIG_BT_OBSERVER)
+	uint8_t  phy_flags:1;
 	uint8_t  scan_req:1;
 	uint8_t  scan_rsp:1;
 #endif /* CONFIG_BT_CTLR_ADV_EXT && CONFIG_BT_OBSERVER */
+#if defined(CONFIG_BT_CTLR_EXT_SCAN_FP)
+	uint8_t  direct:1;
+#endif /* CONFIG_BT_CTLR_EXT_SCAN_FP */
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 	uint8_t  lrpa_used:1;
 	uint8_t  rl_idx;
 #endif /* CONFIG_BT_CTLR_PRIVACY */
-#if defined(CONFIG_BT_CTLR_EXT_SCAN_FP)
-	uint8_t  direct;
-#endif /* CONFIG_BT_CTLR_EXT_SCAN_FP */
 #if defined(CONFIG_BT_HCI_MESH_EXT)
 	uint8_t  chan_idx;
 #endif /* CONFIG_BT_HCI_MESH_EXT */
@@ -302,6 +303,9 @@ struct node_rx_iso_meta {
 	uint32_t timestamp;           /* Time of reception */
 	uint8_t  status;              /* Status of reception (OK/not OK) */
 };
+
+/* Define invalid/unassigned Controller state/role instance handle */
+#define NODE_RX_HANDLE_INVALID 0xFFFF
 
 /* Header of node_rx_pdu */
 struct node_rx_hdr {
@@ -348,6 +352,7 @@ enum {
 #if defined(CONFIG_BT_CTLR_ADV_EXT) || defined(CONFIG_BT_CTLR_JIT_SCHEDULING)
 #if defined(CONFIG_BT_BROADCASTER)
 	EVENT_DONE_EXTRA_TYPE_ADV,
+	EVENT_DONE_EXTRA_TYPE_ADV_AUX,
 #endif /* CONFIG_BT_BROADCASTER */
 #endif /* CONFIG_BT_CTLR_ADV_EXT || CONFIG_BT_CTLR_JIT_SCHEDULING */
 
@@ -456,7 +461,8 @@ void ull_rx_put(memq_link_t *link, void *rx);
 void ull_rx_put_done(memq_link_t *link, void *done);
 void ull_rx_sched(void);
 void ull_rx_sched_done(void);
-void *ull_event_done_extra_get(void);
+struct event_done_extra *ull_event_done_extra_get(void);
+struct event_done_extra *ull_done_extra_type_set(uint8_t type);
 void *ull_event_done(void *param);
 
 int lll_prepare(lll_is_abort_cb_t is_abort_cb,

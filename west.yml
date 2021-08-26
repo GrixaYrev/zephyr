@@ -34,7 +34,7 @@ manifest:
       revision: 094aeb41bb93e9199d24d665ee43e9e05d6d7b1c
       path: modules/lib/civetweb
     - name: cmsis
-      revision: c3bd2094f92d574377f7af2aec147ae181aa5f8e
+      revision: 2c143ffc1fcc044c7f45f2d8ba259228ad5ffa06
       path: modules/hal/cmsis
       groups:
         - hal
@@ -80,7 +80,7 @@ manifest:
       groups:
         - hal
     - name: hal_nordic
-      revision: 00fd2aa97a22ea1052d9dabe1b18ab396daab93a
+      revision: a6e5299041f152da5ae0ab17b2e44e088bb96d6d
       path: modules/hal/nordic
       groups:
         - hal
@@ -118,7 +118,7 @@ manifest:
       groups:
         - hal
     - name: hal_stm32
-      revision: 4200321ef1cd27cacc37b0439389424156bb1267
+      revision: ac47229a9809a6d2250c14ff593e1b29625620be
       path: modules/hal/stm32
       groups:
         - hal
@@ -151,7 +151,7 @@ manifest:
       revision: 12019623bbad9eb54fe51066847a7cbd4b4eac57
       path: modules/lib/loramac-node
     - name: lvgl
-      revision: 31acbaa36e9e74ab88ac81e3d21e7f1d00a71136
+      revision: 783c1f78c8e39751fe89d0883c8bce7336f55e94
       path: modules/lib/gui/lvgl
     - name: lz4
       revision: 8e303c264fc21c2116dc612658003a22e933124d
@@ -162,7 +162,7 @@ manifest:
       groups:
         - crypto
     - name: mcuboot
-      revision: 35576c623f3b64b2c496889f1959f6beb64e64bc
+      revision: ca01db4216c63678768ea78fe04f27cd80b83246
       path: bootloader/mcuboot
     - name: mcumgr
       revision: a15a953e35b0d3100893fd86a127c3e8b7e3257c
@@ -197,10 +197,10 @@ manifest:
     - name: sof
       revision: 779f28ed465c03899c8a7d4aaf399856f4e51158
       path: modules/audio/sof
-    - name: tensorflow
-      revision: dc70a45a7cc12c25726a32cd91b28be59e7bc596
-      path: modules/lib/tensorflow
-      repo-path: tensorflow
+    - name: tflite-micro
+      revision: 9156d050927012da87079064db59d07f03b8baf6
+      path: modules/lib/tflite-micro
+      repo-path: tflite-micro
     - name: tinycbor
       revision: 40daca97b478989884bffb5226e9ab73ca54b8c4
       path: modules/lib/tinycbor

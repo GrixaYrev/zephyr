@@ -30,6 +30,7 @@
 #include "lll_vendor.h"
 #include "lll_clock.h"
 #include "lll_scan.h"
+#include "lll_df_types.h"
 #include "lll_conn.h"
 #include "lll_chan.h"
 #include "lll_filter.h"
@@ -68,7 +69,8 @@ static inline bool isr_rx_scan_check(struct lll_scan *lll, uint8_t irkmatch_ok,
 static inline int isr_rx_pdu(struct lll_scan *lll, struct pdu_adv *pdu_adv_rx,
 			     uint8_t devmatch_ok, uint8_t devmatch_id,
 			     uint8_t irkmatch_ok, uint8_t irkmatch_id,
-			     uint8_t rl_idx, uint8_t rssi_ready);
+			     uint8_t rl_idx, uint8_t rssi_ready,
+			     uint8_t phy_flags_rx);
 
 #if defined(CONFIG_BT_CENTRAL)
 static inline bool isr_scan_init_check(struct lll_scan *lll,
@@ -83,7 +85,8 @@ static inline bool isr_scan_tgta_rpa_check(struct lll_scan *lll,
 					   bool *dir_report);
 static inline bool isr_scan_rsp_adva_matches(struct pdu_adv *srsp);
 static int isr_rx_scan_report(struct lll_scan *lll, uint8_t rssi_ready,
-			      uint8_t rl_idx, bool dir_report);
+			      uint8_t phy_flags_rx, uint8_t rl_idx,
+			      bool dir_report);
 
 int lll_scan_init(void)
 {
@@ -233,8 +236,8 @@ void lll_scan_prepare_connect_req(struct lll_scan *lll, struct pdu_adv *pdu_tx,
 
 	conn_interval_us = (uint32_t)lll_conn->interval * CONN_INT_UNIT_US;
 	conn_offset_us = radio_tmr_end_get() + EVENT_IFS_US +
-			 PKT_AC_US(sizeof(struct pdu_adv_connect_ind),
-				   phy == PHY_LEGACY ? PHY_1M : phy);
+			 PDU_AC_MAX_US(sizeof(struct pdu_adv_connect_ind),
+				       (phy == PHY_LEGACY) ? PHY_1M : phy);
 
 	/* Add transmitWindowDelay to default calculated connection offset:
 	 * 1.25ms for a legacy PDU, 2.5ms for an LE Uncoded PHY and 3.75ms for
@@ -500,34 +503,50 @@ static int is_abort_cb(void *next, void *curr, lll_prepare_cb_t *resume_cb)
 {
 	struct lll_scan *lll = curr;
 
-	/* TODO: check prio */
+	/* Check if pre-emption by a different state/role radio event */
 	if (next != curr) {
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
+		/* Resume not to be used if duration being used */
 		if (unlikely(!lll->duration_reload || lll->duration_expire))
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 		{
-			int err;
+			/* Put back to resume state for continuous scanning */
+			if (!lll->ticks_window) {
+				int err;
 
-			/* wrap back after the pre-empter */
-			*resume_cb = resume_prepare_cb;
+				/* Set the resume prepare function to use for
+				 * resumption after the pre-emptor is done.
+				 */
+				*resume_cb = resume_prepare_cb;
 
-			/* Retain HF clock */
-			err = lll_hfclock_on();
-			LL_ASSERT(err >= 0);
+				/* Retain HF clock */
+				err = lll_hfclock_on();
+				LL_ASSERT(err >= 0);
 
-			return -EAGAIN;
+				/* Yield to the pre-emptor, but be
+				 * resumed thereafter.
+				 */
+				return -EAGAIN;
+			}
+
+			/* Yield to the pre-emptor */
+			return -ECANCELED;
 		}
 	}
 
 	if (0) {
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 	} else if (unlikely(lll->duration_reload && !lll->duration_expire)) {
+		/* Duration expired, do not continue, close and generate
+		 * done event.
+		 */
 		radio_isr_set(isr_done_cleanup, lll);
 	} else if (lll->is_aux_sched) {
-		/* as a continuous scanner, let us not abort aux PDU scan */
+		/* Do not abort LLL scheduled auxiliary PDU scan */
 		return 0;
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 	} else {
+		/* Switch scan window to next radio channel */
 		radio_isr_set(isr_window, lll);
 	}
 
@@ -590,6 +609,7 @@ static void ticker_op_start_cb(uint32_t status, void *param)
 static void isr_rx(void *param)
 {
 	struct node_rx_pdu *node_rx;
+	uint8_t phy_flags_rx;
 	struct lll_scan *lll;
 	struct pdu_adv *pdu;
 	uint8_t devmatch_ok;
@@ -614,8 +634,10 @@ static void isr_rx(void *param)
 		irkmatch_ok = radio_ar_has_match();
 		irkmatch_id = radio_ar_match_get();
 		rssi_ready = radio_rssi_is_ready();
+		phy_flags_rx = radio_phy_flags_rx_get();
 	} else {
-		crc_ok = devmatch_ok = irkmatch_ok = rssi_ready = 0U;
+		crc_ok = devmatch_ok = irkmatch_ok = rssi_ready =
+			phy_flags_rx = 0U;
 		devmatch_id = irkmatch_id = 0xFF;
 	}
 
@@ -664,7 +686,8 @@ static void isr_rx(void *param)
 		int err;
 
 		err = isr_rx_pdu(lll, pdu, devmatch_ok, devmatch_id,
-				 irkmatch_ok, irkmatch_id, rl_idx, rssi_ready);
+				 irkmatch_ok, irkmatch_id, rl_idx, rssi_ready,
+				 phy_flags_rx);
 		if (!err) {
 			if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 				lll_prof_send();
@@ -991,7 +1014,8 @@ static inline bool isr_rx_scan_check(struct lll_scan *lll, uint8_t irkmatch_ok,
 static inline int isr_rx_pdu(struct lll_scan *lll, struct pdu_adv *pdu_adv_rx,
 			     uint8_t devmatch_ok, uint8_t devmatch_id,
 			     uint8_t irkmatch_ok, uint8_t irkmatch_id,
-			     uint8_t rl_idx, uint8_t rssi_ready)
+			     uint8_t rl_idx, uint8_t rssi_ready,
+			     uint8_t phy_flags_rx)
 {
 	bool dir_report = false;
 
@@ -1173,7 +1197,7 @@ static inline int isr_rx_pdu(struct lll_scan *lll, struct pdu_adv *pdu_adv_rx,
 		radio_switch_complete_and_rx(0);
 
 		/* save the adv packet */
-		err = isr_rx_scan_report(lll, rssi_ready,
+		err = isr_rx_scan_report(lll, rssi_ready, phy_flags_rx,
 					 irkmatch_ok ? rl_idx : FILTER_IDX_NONE,
 					 false);
 		if (err) {
@@ -1277,7 +1301,7 @@ static inline int isr_rx_pdu(struct lll_scan *lll, struct pdu_adv *pdu_adv_rx,
 		uint32_t err;
 
 		/* save the scan response packet */
-		err = isr_rx_scan_report(lll, rssi_ready,
+		err = isr_rx_scan_report(lll, rssi_ready, phy_flags_rx,
 					 irkmatch_ok ? rl_idx :
 						       FILTER_IDX_NONE,
 					 dir_report);
@@ -1368,7 +1392,8 @@ static inline bool isr_scan_rsp_adva_matches(struct pdu_adv *srsp)
 }
 
 static int isr_rx_scan_report(struct lll_scan *lll, uint8_t rssi_ready,
-				uint8_t rl_idx, bool dir_report)
+			      uint8_t phy_flags_rx, uint8_t rl_idx,
+			      bool dir_report)
 {
 	struct node_rx_pdu *node_rx;
 	int err = 0;
@@ -1425,11 +1450,13 @@ static int isr_rx_scan_report(struct lll_scan *lll, uint8_t rssi_ready,
 				ftr->ticks_anchor = radio_tmr_start_get();
 				ftr->radio_end_us =
 					radio_tmr_end_get() -
-					radio_rx_chain_delay_get(lll->phy, 1);
-
-				ftr->aux_sched = lll_scan_aux_setup(lll,
-								    pdu_adv_rx,
-								    lll->phy);
+					radio_rx_chain_delay_get(lll->phy,
+								 phy_flags_rx);
+				ftr->phy_flags = phy_flags_rx;
+				ftr->aux_sched =
+					lll_scan_aux_setup(lll, pdu_adv_rx,
+							   lll->phy,
+							   phy_flags_rx);
 				if (ftr->aux_sched) {
 					err = -EBUSY;
 				}
