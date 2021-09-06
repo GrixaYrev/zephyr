@@ -24,6 +24,7 @@ struct pwm_mcux_config {
 	uint8_t index;
 	clock_name_t clock_source;
 	pwm_clock_prescale_t prescale;
+	pwm_register_reload_t reload;
 	pwm_mode_t mode;
 };
 
@@ -128,7 +129,7 @@ static int pwm_mcux_init(const struct device *dev)
 
 	PWM_GetDefaultConfig(&pwm_config);
 	pwm_config.prescale = config->prescale;
-	pwm_config.reloadLogic = kPWM_ReloadPwmFullCycle;
+	pwm_config.reloadLogic = config->reload;
 
 	status = PWM_Init(config->base, config->index, &pwm_config);
 	if (status != kStatus_Success) {
@@ -156,11 +157,14 @@ static const struct pwm_driver_api pwm_mcux_driver_api = {
 #define PWM_DEVICE_INIT_MCUX(n)			  \
 	static struct pwm_mcux_data pwm_mcux_data_ ## n;		  \
 									  \
-	static const struct pwm_mcux_config pwm_mcux_config_ ## n = {     \
+	static const struct pwm_mcux_config pwm_mcux_config_ ## n = { \
 		.base = (void *)DT_REG_ADDR(DT_PARENT(DT_DRV_INST(n))),   \
 		.index = DT_INST_PROP(n, index),			  \
 		.mode = kPWM_EdgeAligned,				  \
-		.prescale = DT_ENUM_IDX_OR(DT_DRV_INST(n), prescaler, kPWM_Prescale_Divide_128),			  \
+		.prescale = DT_ENUM_IDX_OR(DT_DRV_INST(n), prescaler, \
+																	kPWM_Prescale_Divide_128),\
+		.reload = DT_ENUM_IDX_OR(DT_DRV_INST(n), reload,        \
+																	kPWM_ReloadPwmFullCycle), \
 		.clock_source = kCLOCK_IpgClk,				  \
 	};								  \
 									  \

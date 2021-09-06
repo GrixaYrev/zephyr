@@ -35,6 +35,17 @@ properties:
       description: |
         Source clock prescaler
 
+    reload:
+      type: string
+      required: false
+      default: "FullCycle"
+      enum:
+        - "Immediate"
+        - "HalfCycle"
+        - "FullCycle"
+        - "HalfAndFullCycle"
+      
+
     "#pwm-cells":
       const: 1
 
