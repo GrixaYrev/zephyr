@@ -247,6 +247,15 @@ static int mcux_elcdif_init(const struct device *dev)
 	ELCDIF_RgbModeInit(config->base, &rgb_mode);
 	ELCDIF_EnableInterrupts(config->base,
 				kELCDIF_CurFrameDoneInterruptEnable);
+  // default eLCDIF pixel pattern is RGB
+  if(data->pixel_bytes == 2)
+  {
+    // 16 bit output
+    if(config->pixel_format == PIXEL_FORMAT_RGB_565)
+      ELCDIF_SetPixelPattern(config->base, kELCDIF_PixelPatternRGB);
+    else if(config->pixel_format == PIXEL_FORMAT_BGR_565)
+      ELCDIF_SetPixelPattern(config->base, kELCDIF_PixelPatternBGR);
+  }
 	ELCDIF_RgbModeStart(config->base);
 
 	return 0;
