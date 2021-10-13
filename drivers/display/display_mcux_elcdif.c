@@ -8,18 +8,58 @@
 
 #include <drivers/display.h>
 #include <fsl_elcdif.h>
+#include <fsl_pxp.h>
 
 #ifdef CONFIG_HAS_MCUX_CACHE
 #include <fsl_cache.h>
 #endif
 
 #include <logging/log.h>
+#include <timing/timing.h>
 
 LOG_MODULE_REGISTER(display_mcux_elcdif, CONFIG_DISPLAY_LOG_LEVEL);
 
+#define APP_IMG_WIDTH  CONFIG_MCUX_ELCDIF_PANEL_RGB_WIDTH
+#define APP_IMG_HEIGHT CONFIG_MCUX_ELCDIF_PANEL_RGB_HEIGHT
+
+#if (CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565) ||\
+    (CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565)
+
+typedef uint16_t pixel_t;
+#define APP_BPP            2U /* Use 16-bit RGB565 format. */
+#define APP_PXP_PS_FORMAT  kPXP_PsPixelFormatRGB565
+#define APP_PXP_AS_FORMAT  kPXP_AsPixelFormatRGB565
+#define APP_PXP_OUT_FORMAT kPXP_OutputPixelFormatRGB565
+#define APP_DC_FORMAT      kVIDEO_PixelFormatRGB565
+
+#else
+
+typedef uint32_t pixel_t;
+#define APP_BPP            4U /* Use 32-bit XRGB888 format. */
+#define APP_PXP_PS_FORMAT  kPXP_PsPixelFormatRGB888
+#define APP_PXP_AS_FORMAT  kPXP_AsPixelFormatRGB888
+#define APP_PXP_OUT_FORMAT kPXP_OutputPixelFormatRGB888
+#define APP_DC_FORMAT      kVIDEO_PixelFormatXRGB8888
+
+#endif
+
+#if APP_IMG_WIDTH > APP_IMG_HEIGHT
+#define APP_PS_SIZE APP_IMG_HEIGHT
+#else
+#define APP_PS_SIZE APP_IMG_WIDTH
+#endif
+
+#define APP_PS_ULC_X ((APP_IMG_WIDTH / 2) - (APP_PS_SIZE / 2))
+#define APP_PS_ULC_Y ((APP_IMG_HEIGHT / 2) - (APP_PS_SIZE / 2))
+#define APP_PS_LRC_X ((APP_IMG_WIDTH / 2) + (APP_PS_SIZE / 2) - 1U)
+#define APP_PS_LRC_Y ((APP_IMG_HEIGHT / 2) + (APP_PS_SIZE / 2) - 1U)
+
+static struct mcux_elcdif_data mcux_elcdif_data_1;
+
+static uint8_t pxp_buf[CONFIG_MCUX_ELCDIF_PANEL_RGB_WIDTH * CONFIG_MCUX_ELCDIF_PANEL_RGB_HEIGHT * CONFIG_MCUX_ELCDIF_PANEL_BITS_IN_PIXEL / 8u];
+
 K_HEAP_DEFINE(mcux_elcdif_pool,
-	      CONFIG_MCUX_ELCDIF_POOL_BLOCK_MAX *
-	      CONFIG_MCUX_ELCDIF_POOL_BLOCK_NUM);
+	      CONFIG_MCUX_ELCDIF_POOL_BLOCK_MAX * CONFIG_MCUX_ELCDIF_POOL_BLOCK_NUM);
 
 struct mcux_elcdif_config {
 	LCDIF_Type *base;
@@ -57,6 +97,14 @@ static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 	const uint8_t *src;
 	uint8_t *dst;
 
+  timing_t start_time, end_time;
+  uint64_t cycles1, cycles2;
+
+  timing_init();
+  timing_start();
+
+  start_time = timing_counter_get();
+
 	__ASSERT((data->pixel_bytes * desc->pitch * desc->height) <=
 		 desc->buf_size, "Input buffer too small");
 
@@ -64,48 +112,117 @@ static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 
 	k_sem_take(&data->sem, K_FOREVER);
 
-	memcpy(data->fb[write_idx].data, data->fb[read_idx].data,
-	       data->fb_bytes);
+	// memcpy(data->fb[write_idx].data, data->fb[read_idx].data,
+	//        data->fb_bytes);
 
 	src = buf;
-	if(config->orientation == DISPLAY_ORIENTATION_NORMAL)
-	{
-		dst = data->fb[data->write_idx].data;
-		dst += data->pixel_bytes * (y * config->rgb_mode.panelWidth + x);
+	dst = pxp_buf;
+	dst += data->pixel_bytes * (y * config->rgb_mode.panelHeight + x);
 
-		for (h_idx = 0; h_idx < desc->height; h_idx++) {
-			memcpy(dst, src, data->pixel_bytes * desc->width);
-			src += data->pixel_bytes * desc->pitch;
-			dst += data->pixel_bytes * config->rgb_mode.panelWidth;
-		}
+	for (h_idx = 0; h_idx < desc->height; h_idx++) {
+		memcpy(dst, src, data->pixel_bytes * desc->width);
+		src += data->pixel_bytes * desc->pitch;
+		dst += data->pixel_bytes * config->rgb_mode.panelHeight;
 	}
-	else
-	{
-		for (h_idx = 0; h_idx < desc->height; h_idx++) {
-			int offs = 0;
-			dst = data->fb[data->write_idx].data;
-			if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
-				offs = ((x + 1) * config->rgb_mode.panelWidth - (y + h_idx) - 1);
-			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
-				offs = ((config->rgb_mode.panelHeight - (y + h_idx)) * config->rgb_mode.panelWidth - x - 1);
-			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
-				offs = ((config->rgb_mode.panelHeight - x - 1) * config->rgb_mode.panelWidth + (y + h_idx));
-			dst += (data->pixel_bytes * offs);
-			for(w_idx = 0; w_idx < desc->pitch; w_idx++) {
-				memcpy(dst, src, data->pixel_bytes);
-				if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
-					offs = config->rgb_mode.panelWidth;
-				else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
-					offs = -1;
-				else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
-					offs = -config->rgb_mode.panelWidth;
-				else
-					offs = 0;
-				dst += (data->pixel_bytes * offs);
-				src += data->pixel_bytes;
-			}
-		}
-	}
+
+  end_time = timing_counter_get();
+
+  cycles1 = timing_cycles_get(&start_time, &end_time);
+  start_time = end_time;
+
+	// src = buf;
+	// if(config->orientation == DISPLAY_ORIENTATION_NORMAL)
+	// {
+	// 	dst = data->fb[data->write_idx].data;
+	// 	dst += data->pixel_bytes * (y * config->rgb_mode.panelWidth + x);
+
+	// 	for (h_idx = 0; h_idx < desc->height; h_idx++) {
+	// 		memcpy(dst, src, data->pixel_bytes * desc->width);
+	// 		src += data->pixel_bytes * desc->pitch;
+	// 		dst += data->pixel_bytes * config->rgb_mode.panelWidth;
+	// 	}
+	// }
+	// else
+	// {
+	// 	for (h_idx = 0; h_idx < desc->height; h_idx++) {
+	// 		int offs = 0;
+	// 		dst = data->fb[data->write_idx].data;
+	// 		if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
+	// 			offs = ((x + 1) * config->rgb_mode.panelWidth - (y + h_idx) - 1);
+	// 		else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
+	// 			offs = ((config->rgb_mode.panelHeight - (y + h_idx)) * config->rgb_mode.panelWidth - x - 1);
+	// 		else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+	// 			offs = ((config->rgb_mode.panelHeight - x - 1) * config->rgb_mode.panelWidth + (y + h_idx));
+	// 		dst += (data->pixel_bytes * offs);
+	// 		for(w_idx = 0; w_idx < desc->pitch; w_idx++) {
+	// 			memcpy(dst, src, data->pixel_bytes);
+	// 			if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
+	// 				offs = config->rgb_mode.panelWidth;
+	// 			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
+	// 				offs = -1;
+	// 			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+	// 				offs = -config->rgb_mode.panelWidth;
+	// 			else
+	// 				offs = 0;
+	// 			dst += (data->pixel_bytes * offs);
+	// 			src += data->pixel_bytes;
+	// 		}
+	// 	}
+	// }
+  // memcpy(data->fb[write_idx].data, pxp_buf, data->fb_bytes);
+
+  {
+	  const pxp_ps_buffer_config_t psBufferConfig = {
+		  .pixelFormat =
+#if CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888
+			  kPXP_PsPixelFormatRGB888,
+#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565
+			  kPXP_PsPixelFormatRGB565,
+#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
+			  kPXP_PsPixelFormatRGB565,
+#endif
+		  .swapByte = false,
+		  .bufferAddr = (uint32_t)pxp_buf,
+		  .bufferAddrU = 0U,
+		  .bufferAddrV = 0U,
+		  .pitchBytes = CONFIG_MCUX_ELCDIF_PANEL_RGB_HEIGHT * APP_BPP,
+	  };
+
+	  PXP_SetProcessSurfaceBackGroundColor(PXP, 0xFFFFFFFFU);
+    PXP_SetProcessSurfaceBufferConfig(PXP, &psBufferConfig);
+	  PXP_SetProcessSurfacePosition(  PXP,  0,
+                                          0,
+                                          APP_IMG_WIDTH - 1,
+                                          APP_IMG_HEIGHT - 1);
+  }
+
+  /* Output config. */
+  static pxp_output_buffer_config_t outputBufferConfig;
+
+  outputBufferConfig.pixelFormat = APP_PXP_OUT_FORMAT;
+  outputBufferConfig.interlacedMode = kPXP_OutputProgressive;
+  outputBufferConfig.buffer0Addr = (uint32_t)data->fb[write_idx].data;
+  outputBufferConfig.buffer1Addr = 0U;
+  outputBufferConfig.pitchBytes = APP_IMG_WIDTH * APP_BPP;
+  outputBufferConfig.width = APP_IMG_WIDTH;
+  outputBufferConfig.height = APP_IMG_HEIGHT;
+  PXP_SetOutputBufferConfig(PXP, &outputBufferConfig);
+  PXP_EnableCsc1(PXP, false);
+
+  pxp_rotate_degree_t rot = kPXP_Rotate0;
+  if (config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
+	  rot = kPXP_Rotate90;
+  else if (config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
+	  rot = kPXP_Rotate180;
+  else if (config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+	  rot = kPXP_Rotate270;
+
+  PXP_SetRotateConfig(PXP, kPXP_RotateProcessSurface, rot, kPXP_FlipDisable);
+  PXP_Start(PXP);
+  while (!(kPXP_CompleteFlag & PXP_GetStatusFlags(PXP))) {
+  }
+
+  PXP_ClearStatusFlags(PXP, kPXP_CompleteFlag);
 
 #ifdef CONFIG_HAS_MCUX_CACHE
 	DCACHE_CleanByRange((uint32_t) data->fb[write_idx].data,
@@ -114,6 +231,10 @@ static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 
 	ELCDIF_SetNextBufferAddr(config->base,
 				 (uint32_t) data->fb[write_idx].data);
+  end_time = timing_counter_get();
+  cycles2 = timing_cycles_get(&start_time, &end_time);
+  timing_stop();
+	LOG_DBG("t1=%d, t2=%d", timing_cycles_to_ns(cycles1)/1000, timing_cycles_to_ns(cycles2)/1000);
 
 	data->write_idx = read_idx;
 
@@ -239,6 +360,7 @@ static int mcux_elcdif_init(const struct device *dev)
 		memset(data->fb[i].data, 0, data->fb_bytes);
 	}
 	rgb_mode.bufferAddr = (uint32_t) data->fb[0].data;
+  memset(pxp_buf, 0, sizeof(pxp_buf));
 
 	k_sem_init(&data->sem, 1, 1);
 
@@ -256,9 +378,15 @@ static int mcux_elcdif_init(const struct device *dev)
     else if(config->pixel_format == PIXEL_FORMAT_BGR_565)
       ELCDIF_SetPixelPattern(config->base, kELCDIF_PixelPatternBGR);
   }
-	ELCDIF_RgbModeStart(config->base);
 
-	return 0;
+  if (config->orientation != DISPLAY_ORIENTATION_NORMAL)
+	  PXP_Init(PXP);
+  /* Disable AS. */
+  PXP_SetAlphaSurfacePosition(PXP, 0xFFFFU, 0xFFFFU, 0U, 0U);
+
+  ELCDIF_RgbModeStart(config->base);
+
+  return 0;
 }
 
 static const struct display_driver_api mcux_elcdif_api = {
@@ -358,8 +486,6 @@ static struct mcux_elcdif_config mcux_elcdif_config_1 = {
 	#warning "Select correct display orientation !"
 	#endif
 };
-
-static struct mcux_elcdif_data mcux_elcdif_data_1;
 
 DEVICE_DT_INST_DEFINE(0,
 		    &mcux_elcdif_init,

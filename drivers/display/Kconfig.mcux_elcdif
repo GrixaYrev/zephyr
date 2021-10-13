@@ -264,4 +264,8 @@ config MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_270
     Panel rotated 270 degrees clockwise (90 counterclockwise)
 endchoice
 
+config DISPLAY_MCUX_PXP
+  bool "Use PXP module"
+  default n
+
 endif # DISPLAY_MCUX_ELCDIF
