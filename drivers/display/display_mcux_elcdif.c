@@ -8,55 +8,20 @@
 
 #include <drivers/display.h>
 #include <fsl_elcdif.h>
+#ifdef CONFIG_DISPLAY_MCUX_PXP
 #include <fsl_pxp.h>
+#endif
 
 #ifdef CONFIG_HAS_MCUX_CACHE
 #include <fsl_cache.h>
 #endif
 
 #include <logging/log.h>
-#include <timing/timing.h>
+// #include <timing/timing.h>
 
 LOG_MODULE_REGISTER(display_mcux_elcdif, CONFIG_DISPLAY_LOG_LEVEL);
 
-#define APP_IMG_WIDTH  CONFIG_MCUX_ELCDIF_PANEL_RGB_WIDTH
-#define APP_IMG_HEIGHT CONFIG_MCUX_ELCDIF_PANEL_RGB_HEIGHT
-
-#if (CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565) ||\
-    (CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565)
-
-typedef uint16_t pixel_t;
-#define APP_BPP            2U /* Use 16-bit RGB565 format. */
-#define APP_PXP_PS_FORMAT  kPXP_PsPixelFormatRGB565
-#define APP_PXP_AS_FORMAT  kPXP_AsPixelFormatRGB565
-#define APP_PXP_OUT_FORMAT kPXP_OutputPixelFormatRGB565
-#define APP_DC_FORMAT      kVIDEO_PixelFormatRGB565
-
-#else
-
-typedef uint32_t pixel_t;
-#define APP_BPP            4U /* Use 32-bit XRGB888 format. */
-#define APP_PXP_PS_FORMAT  kPXP_PsPixelFormatRGB888
-#define APP_PXP_AS_FORMAT  kPXP_AsPixelFormatRGB888
-#define APP_PXP_OUT_FORMAT kPXP_OutputPixelFormatRGB888
-#define APP_DC_FORMAT      kVIDEO_PixelFormatXRGB8888
-
-#endif
-
-#if APP_IMG_WIDTH > APP_IMG_HEIGHT
-#define APP_PS_SIZE APP_IMG_HEIGHT
-#else
-#define APP_PS_SIZE APP_IMG_WIDTH
-#endif
-
-#define APP_PS_ULC_X ((APP_IMG_WIDTH / 2) - (APP_PS_SIZE / 2))
-#define APP_PS_ULC_Y ((APP_IMG_HEIGHT / 2) - (APP_PS_SIZE / 2))
-#define APP_PS_LRC_X ((APP_IMG_WIDTH / 2) + (APP_PS_SIZE / 2) - 1U)
-#define APP_PS_LRC_Y ((APP_IMG_HEIGHT / 2) + (APP_PS_SIZE / 2) - 1U)
-
 static struct mcux_elcdif_data mcux_elcdif_data_1;
-
-static uint8_t pxp_buf[CONFIG_MCUX_ELCDIF_PANEL_RGB_WIDTH * CONFIG_MCUX_ELCDIF_PANEL_RGB_HEIGHT * CONFIG_MCUX_ELCDIF_PANEL_BITS_IN_PIXEL / 8u];
 
 K_HEAP_DEFINE(mcux_elcdif_pool,
 	      CONFIG_MCUX_ELCDIF_POOL_BLOCK_MAX * CONFIG_MCUX_ELCDIF_POOL_BLOCK_NUM);
@@ -82,6 +47,243 @@ struct mcux_elcdif_data {
 	uint8_t write_idx;
 };
 
+#ifdef CONFIG_DISPLAY_MCUX_PXP
+static pxp_ps_buffer_config_t psBufferConfig = {
+	.swapByte = false,
+	.bufferAddrU = 0U,
+	.bufferAddrV = 0U,
+};
+
+static pxp_output_buffer_config_t outputBufferConfig = {
+	.interlacedMode = kPXP_OutputProgressive,
+	.buffer1Addr = 0U,
+};
+
+// blit source 90 degrees rotated to destination
+static void blit_90(	void *pDestBuffer,
+											const struct mcux_elcdif_config * pPanel_cfg,
+											const void *pSourceBuffer,
+											uint16_t uX,
+											uint16_t uY,
+											const struct display_buffer_descriptor *desc)
+{
+	uint16_t uBytesPerPixel = pPanel_cfg->bits_per_pixel / 8u;
+	uint16_t uSourceBufferWidth = desc->width;
+	uint16_t uSourceBufferHeight = desc->height;
+	uint16_t uDestBufferWidth = pPanel_cfg->rgb_mode.panelWidth;
+	uint16_t uDestBufferHeight = pPanel_cfg->rgb_mode.panelHeight;
+	uint16_t uRotatedX = uDestBufferWidth - uSourceBufferHeight - uY;
+	uint16_t uRotatedY = uX;
+
+	uint16_t uRemW;
+	uint16_t uRemH;
+
+	if(uSourceBufferWidth >= 16 && uSourceBufferHeight >= 16)
+	{
+		uRemW = uSourceBufferWidth % 16;
+		uRemH = uSourceBufferHeight % 16;
+
+		uint16_t uBlitW = uSourceBufferWidth - uRemW;
+		uint16_t uBlitH = uSourceBufferHeight - uRemH;
+		uint16_t uSourceHOffset = uRemH ? ((uRemH) * uSourceBufferWidth * uBytesPerPixel) : 0;
+
+		PXP_Init(PXP);
+		PXP_SetProcessBlockSize(PXP, kPXP_BlockSize16);
+
+		/* PS configure. */
+		psBufferConfig.bufferAddr  = (uint32_t)pSourceBuffer - uSourceHOffset;
+		psBufferConfig.pitchBytes  = uSourceBufferWidth * uBytesPerPixel;
+
+		PXP_SetProcessSurfaceBackGroundColor(PXP, 0U);
+
+		PXP_SetProcessSurfaceBufferConfig(PXP, &psBufferConfig);
+
+		// rotate
+		PXP_SetRotateConfig(PXP, kPXP_RotateProcessSurface, kPXP_Rotate90, kPXP_FlipDisable);
+		PXP_SetProcessSurfacePosition(PXP, 0, 0, uSourceBufferHeight -1, uSourceBufferWidth -1);
+
+		// Disable AS.
+		PXP_SetAlphaSurfacePosition(PXP, 0xFFFFU, 0xFFFFU, 0U, 0U);
+
+		// Output config.
+		outputBufferConfig.buffer0Addr    = (uint32_t) pDestBuffer + ((uRotatedY * uDestBufferWidth) + (uRotatedX + uRemH)) * uBytesPerPixel;
+		outputBufferConfig.pitchBytes     = uDestBufferWidth * uBytesPerPixel;
+		outputBufferConfig.width          = uBlitH;
+		outputBufferConfig.height         = uBlitW;
+
+		PXP_SetOutputBufferConfig(PXP, &outputBufferConfig);
+
+		// Disable CSC1, it is enabled by default.
+		PXP_EnableCsc1(PXP, false);
+
+		// off we go
+		PXP_Start(PXP);
+
+		// Wait for process complete.
+		while (!(kPXP_CompleteFlag & PXP_GetStatusFlags(PXP)))
+		{
+		}
+		PXP_ClearStatusFlags(PXP, kPXP_CompleteFlag);
+	}
+	else
+	{
+		uRemW = uSourceBufferWidth;
+		uRemH = uSourceBufferHeight;
+	}
+
+  // tidy up remainders
+  if(uRemH)
+	{
+		//need bottom uRemH lines
+		uint8_t *pSource   = (uint8_t *)pSourceBuffer + (int32_t)((uSourceBufferWidth * (uSourceBufferHeight - uRemH)) * uBytesPerPixel);
+		uint8_t *pDestBase = (uint8_t *)pDestBuffer + (int32_t)((uRemH + uRotatedX -1 + (uRotatedY * uDestBufferWidth) ) * uBytesPerPixel);
+		for(int32_t uH = 0; uH < uRemH; uH++)
+		{
+			uint8_t *pDest = pDestBase - (uH * uBytesPerPixel);
+			for(int32_t uW = 0; uW < uSourceBufferWidth - uRemW; uW++)
+			{
+				memcpy(pDest, pSource, uBytesPerPixel);
+				pDest += ((int32_t)uDestBufferWidth * uBytesPerPixel);
+				pSource += uBytesPerPixel;
+			}
+			pSource += (uBytesPerPixel * uRemW);
+		}
+	}
+
+	if(uRemW)
+	{
+		//need right uRemW columns
+		uint8_t *pSourceBase = (uint8_t *)pSourceBuffer + (int32_t)((-uRemW + (uSourceBufferWidth * uSourceBufferHeight)) * uBytesPerPixel);
+		uint8_t *pDestBase   = (uint8_t *)pDestBuffer + (int32_t)((((uRotatedY + uSourceBufferWidth - uRemW) * uDestBufferWidth) + uRotatedX) * uBytesPerPixel);
+		for(int32_t uW = 0; uW < uRemW; uW++)
+		{
+			uint8_t *pDest   = pDestBase + (int32_t)((uW * uDestBufferWidth) * uBytesPerPixel);
+			uint8_t *pSource = pSourceBase + (int32_t)(uW * uBytesPerPixel);
+
+			for(uint32_t uH = 0; uH < uSourceBufferHeight; uH++)
+			{
+				memcpy(pDest, pSource, uBytesPerPixel);
+				pSource -= ((int32_t)uSourceBufferWidth * uBytesPerPixel);
+				pDest += uBytesPerPixel;
+			}
+		}
+	}
+}
+
+// blit source 270 degrees rotated to destination
+static void blit_270(	void *pDestBuffer,
+											const struct mcux_elcdif_config * pPanel_cfg,
+											const void *pSourceBuffer,
+											uint16_t uX,
+											uint16_t uY,
+											const struct display_buffer_descriptor *desc)
+{
+	uint16_t uBytesPerPixel = pPanel_cfg->bits_per_pixel / 8u;
+	uint16_t uSourceBufferWidth = desc->width;
+	uint16_t uSourceBufferHeight = desc->height;
+	uint16_t uDestBufferWidth = pPanel_cfg->rgb_mode.panelWidth;
+	uint16_t uDestBufferHeight = pPanel_cfg->rgb_mode.panelHeight;
+	uint16_t uRotatedX = uY;
+	uint16_t uRotatedY = uDestBufferHeight - uSourceBufferWidth - uX;
+
+	uint16_t uRemW;
+	uint16_t uRemH;
+
+	if(uSourceBufferWidth >= 16 && uSourceBufferHeight >= 16)
+	{
+		uRemW = uSourceBufferWidth % 16;
+		uRemH = uSourceBufferHeight % 16;
+
+		uint16_t uBlitW = uSourceBufferWidth - uRemW;
+		uint16_t uBlitH = uSourceBufferHeight - uRemH;
+		uint16_t uSourceHOffset = uRemW * uBytesPerPixel;
+
+		PXP_Init(PXP);
+		PXP_SetProcessBlockSize(PXP, kPXP_BlockSize16);
+
+		/* PS configure. */
+		psBufferConfig.bufferAddr  = (uint32_t)pSourceBuffer - uSourceHOffset;
+		psBufferConfig.pitchBytes  = uSourceBufferWidth * uBytesPerPixel;
+
+		PXP_SetProcessSurfaceBackGroundColor(PXP, 0U);
+
+		PXP_SetProcessSurfaceBufferConfig(PXP, &psBufferConfig);
+
+		// rotate
+		PXP_SetRotateConfig(PXP, kPXP_RotateProcessSurface, kPXP_Rotate270, kPXP_FlipDisable);
+		PXP_SetProcessSurfacePosition(PXP, 0, 0, uSourceBufferHeight - 1, uSourceBufferWidth - 1);
+
+		// Disable AS.
+		PXP_SetAlphaSurfacePosition(PXP, 0xFFFFU, 0xFFFFU, 0U, 0U);
+
+		// Output config.
+		outputBufferConfig.buffer0Addr    = (uint32_t)pDestBuffer + (uRotatedY * uDestBufferWidth + uRotatedX) * uBytesPerPixel;
+		outputBufferConfig.pitchBytes     = uDestBufferWidth * uBytesPerPixel;
+		outputBufferConfig.width          = uBlitH;
+		outputBufferConfig.height         = uBlitW;
+
+		PXP_SetOutputBufferConfig(PXP, &outputBufferConfig);
+
+		// Disable CSC1, it is enabled by default.
+		PXP_EnableCsc1(PXP, false);
+
+		// off we go
+		PXP_Start(PXP);
+
+		// Wait for process complete.
+		while (!(kPXP_CompleteFlag & PXP_GetStatusFlags(PXP)))
+		{
+		}
+		PXP_ClearStatusFlags(PXP, kPXP_CompleteFlag);
+	}
+	else
+	{
+		uRemW = uSourceBufferWidth;
+		uRemH = uSourceBufferHeight;
+	}
+
+  // tidy up remainders
+  if(uRemH)
+	{
+		//need bottom uRemH lines
+		uint8_t *pSourceBase   = ((uint8_t *)pSourceBuffer) + (int32_t)((uSourceBufferWidth * (uSourceBufferHeight - uRemH) + uRemW) * uBytesPerPixel);
+		uint8_t *pDestBase = ((uint8_t *)pDestBuffer) + (int32_t)(((uRotatedX + uSourceBufferHeight - uRemH) + ((uRotatedY + uSourceBufferWidth - uRemW - 1)  * uDestBufferWidth)) * uBytesPerPixel);
+		for(int32_t uH = 0; uH < uRemH; uH++)
+		{
+			uint8_t *pDest = pDestBase + (uH * uBytesPerPixel);
+			uint8_t *pSource = pSourceBase + (uH * uSourceBufferWidth * uBytesPerPixel);
+
+			for(int32_t uW = 0; uW < uSourceBufferWidth - uRemW; uW++)
+			{
+				memcpy(pDest, pSource, uBytesPerPixel);
+				pDest -= ((int32_t)uDestBufferWidth * uBytesPerPixel);
+				pSource += (int32_t)uBytesPerPixel;
+			}
+		}
+	}
+
+	if(uRemW)
+	{
+		//need right uRemW columns
+		uint8_t *pSourceBase = (uint8_t *)pSourceBuffer;
+		uint8_t *pDestBase   = (uint8_t *)pDestBuffer + (int32_t)((((uRotatedY + uSourceBufferWidth - 1) * uDestBufferWidth) + uRotatedX) * uBytesPerPixel);
+		for(int32_t uW = 0; uW < uRemW; uW++)
+		{
+			uint8_t *pDest   = pDestBase - (uW * uDestBufferWidth * uBytesPerPixel);
+			uint8_t *pSource = pSourceBase + (uW * uBytesPerPixel);
+
+			for(int32_t uH = 0; uH < uSourceBufferHeight; uH++)
+			{
+				memcpy(pDest, pSource, uBytesPerPixel);
+				pSource += ((int32_t)uSourceBufferWidth * uBytesPerPixel);
+				pDest += (int32_t)uBytesPerPixel;
+			}
+		}
+	}
+}
+
+#endif
+
 static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 			     const uint16_t y,
 			     const struct display_buffer_descriptor *desc,
@@ -93,17 +295,17 @@ static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 	uint8_t write_idx = data->write_idx;
 	uint8_t read_idx = !write_idx;
 
-	int h_idx, w_idx;
+	int h_idx;
 	const uint8_t *src;
 	uint8_t *dst;
 
-  timing_t start_time, end_time;
-  uint64_t cycles1, cycles2;
+  // timing_t start_time, end_time;
+  // uint64_t cycles1, cycles2;
 
-  timing_init();
-  timing_start();
+  // timing_init();
+  // timing_start();
 
-  start_time = timing_counter_get();
+  // start_time = timing_counter_get();
 
 	__ASSERT((data->pixel_bytes * desc->pitch * desc->height) <=
 		 desc->buf_size, "Input buffer too small");
@@ -111,131 +313,102 @@ static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 	LOG_DBG("W=%d, H=%d, @%d,%d", desc->width, desc->height, x, y);
 
 	k_sem_take(&data->sem, K_FOREVER);
-
-	// memcpy(data->fb[write_idx].data, data->fb[read_idx].data,
-	//        data->fb_bytes);
-
-	src = buf;
-	dst = pxp_buf;
-	dst += data->pixel_bytes * (y * config->rgb_mode.panelHeight + x);
-
-	for (h_idx = 0; h_idx < desc->height; h_idx++) {
-		memcpy(dst, src, data->pixel_bytes * desc->width);
-		src += data->pixel_bytes * desc->pitch;
-		dst += data->pixel_bytes * config->rgb_mode.panelHeight;
+	// duplicate read buffer if only part of the screen need to refresh
+	// else - write buffer will be filled by new data
+	if(data->fb_bytes != desc->buf_size)
+	{
+		memcpy(data->fb[write_idx].data, data->fb[read_idx].data,
+					data->fb_bytes);
+#if defined(CONFIG_HAS_MCUX_CACHE) && defined(CONFIG_DISPLAY_MCUX_PXP)
+		DCACHE_CleanByRange((uint32_t) data->fb[write_idx].data,
+						data->fb_bytes);
+#endif
 	}
 
-  end_time = timing_counter_get();
+	// end_time = timing_counter_get();
+	// cycles1 = timing_cycles_get(&start_time, &end_time);
+	// start_time = end_time;
 
-  cycles1 = timing_cycles_get(&start_time, &end_time);
-  start_time = end_time;
+	src = buf;
+	if(config->orientation == DISPLAY_ORIENTATION_NORMAL)
+	{
+		if(data->fb_bytes == desc->buf_size)
+			memcpy(data->fb[write_idx].data, buf, data->fb_bytes);
+		else
+		{
+			dst = data->fb[data->write_idx].data;
+			dst += data->pixel_bytes * (y * config->rgb_mode.panelWidth + x);
 
-	// src = buf;
-	// if(config->orientation == DISPLAY_ORIENTATION_NORMAL)
-	// {
-	// 	dst = data->fb[data->write_idx].data;
-	// 	dst += data->pixel_bytes * (y * config->rgb_mode.panelWidth + x);
-
-	// 	for (h_idx = 0; h_idx < desc->height; h_idx++) {
-	// 		memcpy(dst, src, data->pixel_bytes * desc->width);
-	// 		src += data->pixel_bytes * desc->pitch;
-	// 		dst += data->pixel_bytes * config->rgb_mode.panelWidth;
-	// 	}
-	// }
-	// else
-	// {
-	// 	for (h_idx = 0; h_idx < desc->height; h_idx++) {
-	// 		int offs = 0;
-	// 		dst = data->fb[data->write_idx].data;
-	// 		if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
-	// 			offs = ((x + 1) * config->rgb_mode.panelWidth - (y + h_idx) - 1);
-	// 		else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
-	// 			offs = ((config->rgb_mode.panelHeight - (y + h_idx)) * config->rgb_mode.panelWidth - x - 1);
-	// 		else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
-	// 			offs = ((config->rgb_mode.panelHeight - x - 1) * config->rgb_mode.panelWidth + (y + h_idx));
-	// 		dst += (data->pixel_bytes * offs);
-	// 		for(w_idx = 0; w_idx < desc->pitch; w_idx++) {
-	// 			memcpy(dst, src, data->pixel_bytes);
-	// 			if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
-	// 				offs = config->rgb_mode.panelWidth;
-	// 			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
-	// 				offs = -1;
-	// 			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
-	// 				offs = -config->rgb_mode.panelWidth;
-	// 			else
-	// 				offs = 0;
-	// 			dst += (data->pixel_bytes * offs);
-	// 			src += data->pixel_bytes;
-	// 		}
-	// 	}
-	// }
-  // memcpy(data->fb[write_idx].data, pxp_buf, data->fb_bytes);
-
-  {
-	  const pxp_ps_buffer_config_t psBufferConfig = {
-		  .pixelFormat =
-#if CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888
-			  kPXP_PsPixelFormatRGB888,
-#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565
-			  kPXP_PsPixelFormatRGB565,
-#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
-			  kPXP_PsPixelFormatRGB565,
-#endif
-		  .swapByte = false,
-		  .bufferAddr = (uint32_t)pxp_buf,
-		  .bufferAddrU = 0U,
-		  .bufferAddrV = 0U,
-		  .pitchBytes = CONFIG_MCUX_ELCDIF_PANEL_RGB_HEIGHT * APP_BPP,
-	  };
-
-	  PXP_SetProcessSurfaceBackGroundColor(PXP, 0xFFFFFFFFU);
-    PXP_SetProcessSurfaceBufferConfig(PXP, &psBufferConfig);
-	  PXP_SetProcessSurfacePosition(  PXP,  0,
-                                          0,
-                                          APP_IMG_WIDTH - 1,
-                                          APP_IMG_HEIGHT - 1);
-  }
-
-  /* Output config. */
-  static pxp_output_buffer_config_t outputBufferConfig;
-
-  outputBufferConfig.pixelFormat = APP_PXP_OUT_FORMAT;
-  outputBufferConfig.interlacedMode = kPXP_OutputProgressive;
-  outputBufferConfig.buffer0Addr = (uint32_t)data->fb[write_idx].data;
-  outputBufferConfig.buffer1Addr = 0U;
-  outputBufferConfig.pitchBytes = APP_IMG_WIDTH * APP_BPP;
-  outputBufferConfig.width = APP_IMG_WIDTH;
-  outputBufferConfig.height = APP_IMG_HEIGHT;
-  PXP_SetOutputBufferConfig(PXP, &outputBufferConfig);
-  PXP_EnableCsc1(PXP, false);
-
-  pxp_rotate_degree_t rot = kPXP_Rotate0;
-  if (config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
-	  rot = kPXP_Rotate90;
-  else if (config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
-	  rot = kPXP_Rotate180;
-  else if (config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
-	  rot = kPXP_Rotate270;
-
-  PXP_SetRotateConfig(PXP, kPXP_RotateProcessSurface, rot, kPXP_FlipDisable);
-  PXP_Start(PXP);
-  while (!(kPXP_CompleteFlag & PXP_GetStatusFlags(PXP))) {
-  }
-
-  PXP_ClearStatusFlags(PXP, kPXP_CompleteFlag);
-
+			for (h_idx = 0; h_idx < desc->height; h_idx++) {
+				memcpy(dst, src, data->pixel_bytes * desc->width);
+				src += data->pixel_bytes * desc->pitch;
+				dst += data->pixel_bytes * config->rgb_mode.panelWidth;
+			}
+		}
+	}
+	else
+	{
+#ifndef CONFIG_DISPLAY_MCUX_PXP
+		int w_idx;
+		for (h_idx = 0; h_idx < desc->height; h_idx++) {
+			int offs = 0;
+			dst = data->fb[data->write_idx].data;
+			if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
+				offs = ((x + 1) * config->rgb_mode.panelWidth - (y + h_idx) - 1);
+			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
+				offs = ((config->rgb_mode.panelHeight - (y + h_idx)) * config->rgb_mode.panelWidth - x - 1);
+			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+				offs = ((config->rgb_mode.panelHeight - x - 1) * config->rgb_mode.panelWidth + (y + h_idx));
+			dst += (data->pixel_bytes * offs);
+			for(w_idx = 0; w_idx < desc->pitch; w_idx++) {
+				memcpy(dst, src, data->pixel_bytes);
+				if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
+					offs = config->rgb_mode.panelWidth;
+				else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
+					offs = -1;
+				else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+					offs = -config->rgb_mode.panelWidth;
+				else
+					offs = 0;
+				dst += (data->pixel_bytes * offs);
+				src += data->pixel_bytes;
+			}
+		}
+	#ifdef CONFIG_HAS_MCUX_CACHE
+		DCACHE_CleanByRange((uint32_t) data->fb[write_idx].data, data->fb_bytes);
+	#endif
+#else
 #ifdef CONFIG_HAS_MCUX_CACHE
-	DCACHE_CleanByRange((uint32_t) data->fb[write_idx].data,
-			    data->fb_bytes);
+	DCACHE_CleanByRange((uint32_t) buf, desc->buf_size);
 #endif
+	if (config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
+	{
+		blit_90(data->fb[write_idx].data,
+						config,
+						buf,
+						x,
+						y,
+						desc);
+	}
+	else if (config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+	{
+		blit_270(	data->fb[write_idx].data,
+							config,
+							buf,
+							x,
+							y,
+							desc);
+	}
+
+#endif
+	}
 
 	ELCDIF_SetNextBufferAddr(config->base,
 				 (uint32_t) data->fb[write_idx].data);
-  end_time = timing_counter_get();
-  cycles2 = timing_cycles_get(&start_time, &end_time);
-  timing_stop();
-	LOG_DBG("t1=%d, t2=%d", timing_cycles_to_ns(cycles1)/1000, timing_cycles_to_ns(cycles2)/1000);
-
+  // end_time = timing_counter_get();
+  // cycles2 = timing_cycles_get(&start_time, &end_time);
+  // timing_stop();
+	// LOG_DBG("t1=%d, t2=%d", timing_cycles_to_ns(cycles1)/1000, timing_cycles_to_ns(cycles2)/1000);
 	data->write_idx = read_idx;
 
 	return 0;
@@ -360,7 +533,6 @@ static int mcux_elcdif_init(const struct device *dev)
 		memset(data->fb[i].data, 0, data->fb_bytes);
 	}
 	rgb_mode.bufferAddr = (uint32_t) data->fb[0].data;
-  memset(pxp_buf, 0, sizeof(pxp_buf));
 
 	k_sem_init(&data->sem, 1, 1);
 
@@ -379,11 +551,29 @@ static int mcux_elcdif_init(const struct device *dev)
       ELCDIF_SetPixelPattern(config->base, kELCDIF_PixelPatternBGR);
   }
 
+ #ifdef CONFIG_DISPLAY_MCUX_PXP
   if (config->orientation != DISPLAY_ORIENTATION_NORMAL)
-	  PXP_Init(PXP);
-  /* Disable AS. */
-  PXP_SetAlphaSurfacePosition(PXP, 0xFFFFU, 0xFFFFU, 0U, 0U);
+	{
+		pxp_ps_pixel_format_t PsPxFmt = kPXP_PsPixelFormatRGB565;
+		pxp_output_pixel_format_t OutPxFmt = kPXP_OutputPixelFormatRGB565;
+		pxp_rotate_degree_t Rotate = kPXP_Rotate90;
 
+		if (config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
+			Rotate = kPXP_Rotate180;
+		else if (config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+			Rotate = kPXP_Rotate270;
+
+		if (config->pixel_format == PIXEL_FORMAT_RGB_888) {
+			PsPxFmt = kPXP_PsPixelFormatRGB888;
+			OutPxFmt = kPXP_OutputPixelFormatRGB888;
+		} else if (config->pixel_format == PIXEL_FORMAT_ARGB_8888) {
+			PsPxFmt = kPXP_PsPixelFormatRGB888;
+			OutPxFmt = kPXP_OutputPixelFormatARGB8888;
+		}
+		psBufferConfig.pixelFormat = PsPxFmt;
+		outputBufferConfig.pixelFormat = OutPxFmt;
+	}
+ #endif
   ELCDIF_RgbModeStart(config->base);
 
   return 0;
