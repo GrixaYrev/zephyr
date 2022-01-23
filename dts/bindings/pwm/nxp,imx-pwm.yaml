@@ -19,6 +19,33 @@ properties:
     label:
       required: true
 
+    prescaler:
+      type: int
+      required: false
+      default: 128
+      enum:
+        - 1
+        - 2
+        - 4
+        - 8
+        - 16
+        - 32
+        - 64
+        - 128
+      description: |
+        Source clock prescaler
+
+    reload:
+      type: string
+      required: false
+      default: "FullCycle"
+      enum:
+        - "Immediate"
+        - "HalfCycle"
+        - "FullCycle"
+        - "HalfAndFullCycle"
+      
+
     "#pwm-cells":
       const: 1
 

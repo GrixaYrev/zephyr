@@ -21,6 +21,12 @@ Structured Data APIs
 
 JSON
 ====
+.. note::
+
+   This library use a descriptors, which describe c-structures. Some constraint should be observed: 
+   
+   #. ``int32_t`` field for number, ``char*`` for string;
+   #. all structures with array should have extra ``int32_t`` field for count.
 
 .. doxygengroup:: json
 

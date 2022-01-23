@@ -11,6 +11,7 @@
 #include <soc.h>
 #include <fsl_pwm.h>
 #include <fsl_clock.h>
+#include <math.h>
 
 #define LOG_LEVEL CONFIG_PWM_LOG_LEVEL
 #include <logging/log.h>
@@ -23,6 +24,7 @@ struct pwm_mcux_config {
 	uint8_t index;
 	clock_name_t clock_source;
 	pwm_clock_prescale_t prescale;
+	pwm_register_reload_t reload;
 	pwm_mode_t mode;
 };
 
@@ -63,7 +65,7 @@ static int mcux_pwm_pin_set(const struct device *dev, uint32_t pwm,
 		return -EINVAL;
 	}
 
-	duty_cycle = 100 * pulse_cycles / period_cycles;
+	duty_cycle = round(100.0 * (float)pulse_cycles / (float)period_cycles);
 
 	/* FIXME: Force re-setup even for duty-cycle update */
 	if (period_cycles != data->period_cycles[pwm]) {
@@ -127,7 +129,7 @@ static int pwm_mcux_init(const struct device *dev)
 
 	PWM_GetDefaultConfig(&pwm_config);
 	pwm_config.prescale = config->prescale;
-	pwm_config.reloadLogic = kPWM_ReloadPwmFullCycle;
+	pwm_config.reloadLogic = config->reload;
 
 	status = PWM_Init(config->base, config->index, &pwm_config);
 	if (status != kStatus_Success) {
@@ -155,11 +157,14 @@ static const struct pwm_driver_api pwm_mcux_driver_api = {
 #define PWM_DEVICE_INIT_MCUX(n)			  \
 	static struct pwm_mcux_data pwm_mcux_data_ ## n;		  \
 									  \
-	static const struct pwm_mcux_config pwm_mcux_config_ ## n = {     \
+	static const struct pwm_mcux_config pwm_mcux_config_ ## n = { \
 		.base = (void *)DT_REG_ADDR(DT_PARENT(DT_DRV_INST(n))),   \
 		.index = DT_INST_PROP(n, index),			  \
 		.mode = kPWM_EdgeAligned,				  \
-		.prescale = kPWM_Prescale_Divide_128,			  \
+		.prescale = DT_ENUM_IDX_OR(DT_DRV_INST(n), prescaler, \
+																	kPWM_Prescale_Divide_128),\
+		.reload = DT_ENUM_IDX_OR(DT_DRV_INST(n), reload,        \
+																	kPWM_ReloadPwmFullCycle), \
 		.clock_source = kCLOCK_IpgClk,				  \
 	};								  \
 									  \

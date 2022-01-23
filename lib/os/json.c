@@ -484,8 +484,8 @@ static ptrdiff_t get_elem_size(const struct json_obj_descr *descr)
 	case JSON_TOK_TRUE:
 	case JSON_TOK_FALSE:
 		return sizeof(bool);
-	case JSON_TOK_LIST_START:
-		return descr->array.n_elements * get_elem_size(descr->array.element_descr);
+	case JSON_TOK_LIST_START:	// struct with array should have count field
+		return (descr->array.n_elements * get_elem_size(descr->array.element_descr)) + sizeof(int32_t);
 	case JSON_TOK_OBJECT_START: {
 		ptrdiff_t total = 0;
 		size_t i;

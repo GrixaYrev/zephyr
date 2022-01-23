@@ -10,3 +10,15 @@ properties:
 
     interrupts:
       required: true
+
+    rs485-mode:
+      type: boolean
+      required: false
+      description: |
+        Set to enable RTS flow control at boot time.
+        hw-flow-control should be set to false.
+
+    rs485-de-active-low:
+      type: boolean
+      required: false
+      description: RTS polarity at RS485 mode.

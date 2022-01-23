@@ -20,6 +20,7 @@ struct mcux_lpuart_config {
 	clock_control_subsys_t clock_subsys;
 	uint32_t baud_rate;
 	uint8_t flow_ctrl;
+	uint8_t rts_active_low;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	void (*irq_config_func)(const struct device *dev);
 #endif
@@ -297,6 +298,7 @@ static int mcux_lpuart_configure_init(const struct device *dev,
 	FSL_FEATURE_LPUART_HAS_MODEM_SUPPORT
 	switch (cfg->flow_ctrl) {
 	case UART_CFG_FLOW_CTRL_NONE:
+	case UART_CFG_FLOW_CTRL_RS485:
 		uart_config.enableTxCTS = false;
 		uart_config.enableRxRTS = false;
 		break;
@@ -309,10 +311,23 @@ static int mcux_lpuart_configure_init(const struct device *dev,
 	}
 #endif
 	uart_config.baudRate_Bps = cfg->baudrate;
-	uart_config.enableTx = true;
 	uart_config.enableRx = true;
+	/* enable tx after set tx-rts */
+	uart_config.enableTx = false;
 
 	LPUART_Init(config->base, &uart_config, clock_freq);
+
+	if (cfg->flow_ctrl == UART_CFG_FLOW_CTRL_RS485)
+	{
+		/* HAL not supported this feature */
+		config->base->MODIR |= LPUART_MODIR_TXRTSE(true);
+		if (!config->rts_active_low)
+		{
+			config->base->MODIR |= LPUART_MODIR_TXRTSPOL(1);
+		}
+	}
+	/* now can enable tx */
+	config->base->CTRL |= LPUART_CTRL_TE(true);
 
 	/* update internal uart_config */
 	data->uart_config = *cfg;
@@ -425,14 +440,24 @@ static const struct uart_driver_api mcux_lpuart_driver_api = {
 	LPUART_MCUX_DECLARE_CFG(n, LPUART_MCUX_IRQ_CFG_FUNC_INIT)
 #endif
 
+#if DT_INST_PROP(n, hw_flow_control) && DT_INST_PROP(n, rs485_mode)
+	#error Only one type of flow control can be enabled.
+#endif
+
+#define FLOW_CONTROL(n) DT_INST_PROP(n, hw_flow_control) \
+													?	UART_CFG_FLOW_CTRL_RTS_CTS   \
+													: DT_INST_PROP(n, rs485_mode)  \
+															? UART_CFG_FLOW_CTRL_RS485 \
+															: UART_CFG_FLOW_CTRL_NONE
+
 #define LPUART_MCUX_DECLARE_CFG(n, IRQ_FUNC_INIT)			\
 static const struct mcux_lpuart_config mcux_lpuart_##n##_config = {	\
 	.base = (LPUART_Type *) DT_INST_REG_ADDR(n),			\
 	.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),		\
 	.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),\
 	.baud_rate = DT_INST_PROP(n, current_speed),			\
-	.flow_ctrl = DT_INST_PROP(n, hw_flow_control) ?	\
-		UART_CFG_FLOW_CTRL_RTS_CTS : UART_CFG_FLOW_CTRL_NONE,\
+	.flow_ctrl = FLOW_CONTROL(n),\
+	.rts_active_low = DT_INST_PROP(n, rs485_de_active_low), \
 	IRQ_FUNC_INIT							\
 }
 

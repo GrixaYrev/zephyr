@@ -346,6 +346,28 @@
 			status = "disabled";
 		};
 
+		adc1: adc@400c4000 {
+			compatible = "nxp,mcux-12b1msps-sar";
+			reg = <0x400C4000 0x1000>;
+			interrupts = <67 0>;
+			label = "ADC_1";
+			clk-divider = <1>;
+			sample-period-mode = <0>;
+			status = "disabled";
+			#io-channel-cells = <1>;
+		};
+
+		adc2: adc@400c8000 {
+			compatible = "nxp,mcux-12b1msps-sar";
+			reg = <0x400C8000 0x1000>;
+			interrupts = <68 0>;
+			label = "ADC_2";
+			clk-divider = <1>;
+			sample-period-mode = <0>;
+			status = "disabled";
+			#io-channel-cells = <1>;
+		};
+
 		flexpwm1: flexpwm@403dc000 {
 			compatible = "nxp,flexpwm";
 			reg = <0x403dc000 0x4000>;
@@ -670,6 +692,30 @@
 			status = "disabled";
 			interrupts = <45 0>;
 			label = "WDOG1";
+		};
+
+		flexio1: flexio@401ac000 {
+			compatible = "nxp,imx-flexio";
+			reg = <0x401ac000 0x4000>;
+			status = "disabled";
+			interrupts = <90 0>;
+			clocks = <&ccm IMX_CCM_FLEXIO1_CLK 0 0>;
+		};
+
+		flexio2: flexio@401b0000 {
+			compatible = "nxp,imx-flexio";
+			reg = <0x401b0000 0x4000>;
+			status = "disabled";
+			interrupts = <91 0>;
+			clocks = <&ccm IMX_CCM_FLEXIO2_3_CLK 0 0>;
+		};
+
+		flexio3: flexio@42020000 {
+			compatible = "nxp,imx-flexio";
+			reg = <0x42020000 0x4000>;
+			status = "disabled";
+			interrupts = <156 0>;
+			clocks = <&ccm IMX_CCM_FLEXIO2_3_CLK 0 0>;
 		};
 	};
 };

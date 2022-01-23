@@ -40,6 +40,228 @@ choice MCUX_ELCDIF_PANEL
 config MCUX_ELCDIF_PANEL_RK043FN02H
 	bool "Rocktech rk043fn02h-ct"
 
+config MCUX_ELCDIF_PANEL_CUSTOM
+	bool "Panel with user-defined parameters"
+
+endchoice
+
+menu "User-defined panel settings"
+  visible if MCUX_ELCDIF_PANEL_CUSTOM
+
+menu "eLCDIF RGB mode settings"
+  visible if MCUX_ELCDIF_PANEL_CUSTOM
+
+config MCUX_ELCDIF_PANEL_RGB_WIDTH
+  int "Display panel width, pixels per line"
+  default 480 if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 800
+
+config MCUX_ELCDIF_PANEL_RGB_HEIGHT
+  int "Display panel width, pixels per line"
+  default 272 if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 480
+
+config MCUX_ELCDIF_PANEL_RGB_HSW
+  int "HSYNC pulse width"
+  default 41 if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 1
+
+config MCUX_ELCDIF_PANEL_RGB_HFP
+  int "Horizontal front porch"
+  default 4   if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 40
+
+config MCUX_ELCDIF_PANEL_RGB_HBP
+  int "Horizontal back porch"
+  default 8   if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 87
+
+config MCUX_ELCDIF_PANEL_RGB_VSW
+  int "VSYNC pulse width"
+  default 10  if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 1
+
+config MCUX_ELCDIF_PANEL_RGB_VFP
+  int "Vertical front porch"
+  default 4   if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 13
+
+config MCUX_ELCDIF_PANEL_RGB_VBP
+  int "Vertical back porch"
+  default 2   if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 31
+
+menu "Polarity flags, used to contol the signal polarity"
+
+config MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_DE_HIGH
+	bool "Data enable line active sygnal on high"
+	default y
+
+config MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_VSYNC_HIGH
+	bool "VSYNC active sygnal high"
+  default n
+
+config MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_HSYNC_HIGH
+	bool "HSYNC active sygnal high"
+  default n
+
+config MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_CLKEDGE_RISING
+	bool "Drive data on rising edge"
+  default y
+
+endmenu   # "Polarity flags"
+
+config MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RAW8
+  def_int 0
+config MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB565
+  def_int 1
+config MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB666
+  def_int 2
+config MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB8888
+  def_int 3
+config MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB888
+  def_int 4
+
+config MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT 
+  int
+  range MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RAW8 MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB888
+  prompt "Pixel format"
+  default MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB565
+  help
+    RGB mode pixel format. Available values:
+      0 - MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RAW8    - "RAW 8 bit, four data use 32 bits"
+      1 - MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB565  - "RGB565, two pixel use 32 bits"
+      2 - MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB666  - "RGB666 unpacked, one pixel uses 32 bits"
+      3 - MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB8888 - "XRGB8888 unpacked, one pixel uses 32 bits"
+      4 - MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB888  - "RGB888 packed, one pixel uses 24 bits"
+
+config MCUX_ELCDIF_PANEL_RGB_DBUS_8
+  def_int 0
+config MCUX_ELCDIF_PANEL_RGB_DBUS_16
+  def_int 1
+config MCUX_ELCDIF_PANEL_RGB_DBUS_18
+  def_int 2
+config MCUX_ELCDIF_PANEL_RGB_DBUS_24
+  def_int 3
+
+config MCUX_ELCDIF_PANEL_RGB_DBUS
+  int
+  range MCUX_ELCDIF_PANEL_RGB_DBUS_8 MCUX_ELCDIF_PANEL_RGB_DBUS_24
+  prompt "Data bus width"
+  default MCUX_ELCDIF_PANEL_RGB_DBUS_16
+  help
+    eLCDif module RGB mode data bus width. Available values:
+      0 - MCUX_ELCDIF_PANEL_RGB_DBUS_8  - 8 bit
+      1 - MCUX_ELCDIF_PANEL_RGB_DBUS_16 - 16 bit
+      2 - MCUX_ELCDIF_PANEL_RGB_DBUS_18 - 18 bit
+      3 - MCUX_ELCDIF_PANEL_RGB_DBUS_24 - 24 bit
+
+endmenu   # "eLCDIF RGB mode settings"
+
+config MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888
+  def_int 0
+config MCUX_ELCDIF_PANEL_PIXEL_FMT_MONO01
+  def_int 1
+config  MCUX_ELCDIF_PANEL_PIXEL_FMT_MONO10
+  def_int 2
+config  MCUX_ELCDIF_PANEL_PIXEL_FMT_ARGB8888
+  def_int 3
+config  MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565
+  def_int 4
+config  MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
+  def_int 5
+
+config  MCUX_ELCDIF_PANEL_PIXEL_FMT
+  int "Display pixel format"
+  range MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888  MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
+  def_int MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
+  help
+    Available values:
+     0  - MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888    - color RGB 888
+     1  - MCUX_ELCDIF_PANEL_PIXEL_FMT_MONO01    - monochrome (0 = Black/1 = White)
+     2  - MCUX_ELCDIF_PANEL_PIXEL_FMT_MONO10    - monochrome (1 = Black/0 = White)
+     3  - MCUX_ELCDIF_PANEL_PIXEL_FMT_ARGB8888  - color ARGB 8888
+     4  - MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565    - color RGB 565
+     5  - MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565    - color BGR 565
+
+config  MCUX_ELCDIF_PANEL_BITS_IN_PIXEL
+  int "Display bits in pixel"
+  range 1 32
+  def_int 16
+  help
+    Should be in range 1...32
+
+endmenu   # "User-defined panel settings"
+
+
+# for MCUX_ELCDIF_PANEL_RK043FN02H input freq should be 9 MHz
+#   which should be reached dividing fpll5 by 10 - i.e. prediv = 4 (div/5), postdiv = 1 (div/2)
+menu "Clock settings"
+  visible if MCUX_ELCDIF_PANEL_CUSTOM
+
+config MCUX_ELCDIF_CLOCK_PRE_DIV
+  int
+  range 0 7
+  default 4  if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 2
+  prompt "eLCDIF pre-divider"
+  help
+    eLCDIF LCDIF_PRED in CCM_CSCDR2 register value (pre-divider for lcdif clock)
+    PLL5 used as clock source for eLCDIF with output frequency fpll5 = 93 MHz
+    eLCDIF prediv should have values
+    000 divide by 1
+    001 divide by 2
+    010 divide by 3
+    011 divide by 4
+    100 divide by 5
+    101 divide by 6
+    110 divide by 7
+    111 divide by 8
+
+config MCUX_ELCDIF_CLOCK_POST_DIV
+  int
+  range 0 7
+  default 1  if MCUX_ELCDIF_PANEL_RK043FN02H
+  default 0
+  prompt "eLCDIF post-divider"
+  help 
+    eLCDIF LCDIF_PODF in CCM_CBCMR register value (post-divider for LCDIF clock)
+    PLL5 used as clock source for eLCDIF with output frequency fpll5 = 93 MHz
+    eLCDIF postdiv should have values 0...7
+    000 divide by 1
+    001 divide by 2
+    010 divide by 3
+    011 divide by 4
+    100 divide by 5
+    101 divide by 6
+    110 divide by 7
+    111 divide by 8
+
+endmenu   # "Clock settings"
+
+choice MCUX_ELCDIF_PANEL_ORIENTATION
+  prompt "Panel orientation"
+  default MCUX_ELCDIF_PANEL_ORIENTATION_NORMAL
+
+config MCUX_ELCDIF_PANEL_ORIENTATION_NORMAL
+  bool "Normal"
+  help
+    Normal panel orientation
+
+config MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_90
+  bool "Rotated 90"
+  help
+    Panel rotated 90 degrees clockwise
+
+config MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_180
+  bool "Rotated 180"
+  help
+    Panel rotated 180 degrees clockwise
+
+config MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_270
+  bool "Rotated 270"
+  help
+    Panel rotated 270 degrees clockwise (90 counterclockwise)
 endchoice
 
 endif # DISPLAY_MCUX_ELCDIF

@@ -27,6 +27,7 @@ struct mcux_elcdif_config {
 	elcdif_rgb_mode_config_t rgb_mode;
 	enum display_pixel_format pixel_format;
 	uint8_t bits_per_pixel;
+	enum display_orientation orientation;
 };
 
 struct mcux_mem_block {
@@ -52,7 +53,7 @@ static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 	uint8_t write_idx = data->write_idx;
 	uint8_t read_idx = !write_idx;
 
-	int h_idx;
+	int h_idx, w_idx;
 	const uint8_t *src;
 	uint8_t *dst;
 
@@ -67,13 +68,43 @@ static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 	       data->fb_bytes);
 
 	src = buf;
-	dst = data->fb[data->write_idx].data;
-	dst += data->pixel_bytes * (y * config->rgb_mode.panelWidth + x);
+	if(config->orientation == DISPLAY_ORIENTATION_NORMAL)
+	{
+		dst = data->fb[data->write_idx].data;
+		dst += data->pixel_bytes * (y * config->rgb_mode.panelWidth + x);
 
-	for (h_idx = 0; h_idx < desc->height; h_idx++) {
-		memcpy(dst, src, data->pixel_bytes * desc->width);
-		src += data->pixel_bytes * desc->pitch;
-		dst += data->pixel_bytes * config->rgb_mode.panelWidth;
+		for (h_idx = 0; h_idx < desc->height; h_idx++) {
+			memcpy(dst, src, data->pixel_bytes * desc->width);
+			src += data->pixel_bytes * desc->pitch;
+			dst += data->pixel_bytes * config->rgb_mode.panelWidth;
+		}
+	}
+	else
+	{
+		for (h_idx = 0; h_idx < desc->height; h_idx++) {
+			int offs = 0;
+			dst = data->fb[data->write_idx].data;
+			if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
+				offs = ((x + 1) * config->rgb_mode.panelWidth - (y + h_idx) - 1);
+			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
+				offs = ((config->rgb_mode.panelHeight - (y + h_idx)) * config->rgb_mode.panelWidth - x - 1);
+			else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+				offs = ((config->rgb_mode.panelHeight - x - 1) * config->rgb_mode.panelWidth + (y + h_idx));
+			dst += (data->pixel_bytes * offs);
+			for(w_idx = 0; w_idx < desc->pitch; w_idx++) {
+				memcpy(dst, src, data->pixel_bytes);
+				if(config->orientation == DISPLAY_ORIENTATION_ROTATED_90)
+					offs = config->rgb_mode.panelWidth;
+				else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_180)
+					offs = -1;
+				else  if(config->orientation == DISPLAY_ORIENTATION_ROTATED_270)
+					offs = -config->rgb_mode.panelWidth;
+				else
+					offs = 0;
+				dst += (data->pixel_bytes * offs);
+				src += data->pixel_bytes;
+			}
+		}
 	}
 
 #ifdef CONFIG_HAS_MCUX_CACHE
@@ -159,11 +190,18 @@ static void mcux_elcdif_get_capabilities(const struct device *dev,
 	const struct mcux_elcdif_config *config = dev->config;
 
 	memset(capabilities, 0, sizeof(struct display_capabilities));
-	capabilities->x_resolution = config->rgb_mode.panelWidth;
-	capabilities->y_resolution = config->rgb_mode.panelHeight;
+	if( (config->orientation == DISPLAY_ORIENTATION_ROTATED_90) ||\
+	    (config->orientation == DISPLAY_ORIENTATION_ROTATED_270)) {
+		capabilities->x_resolution = config->rgb_mode.panelHeight;
+		capabilities->y_resolution = config->rgb_mode.panelWidth;
+	}
+	else {
+		capabilities->x_resolution = config->rgb_mode.panelWidth;
+		capabilities->y_resolution = config->rgb_mode.panelHeight;
+	}
 	capabilities->supported_pixel_formats = config->pixel_format;
 	capabilities->current_pixel_format = config->pixel_format;
-	capabilities->current_orientation = DISPLAY_ORIENTATION_NORMAL;
+	capabilities->current_orientation = config->orientation;
 }
 
 static void mcux_elcdif_isr(const struct device *dev)
@@ -232,26 +270,84 @@ static void mcux_elcdif_config_func_1(const struct device *dev);
 static struct mcux_elcdif_config mcux_elcdif_config_1 = {
 	.base = (LCDIF_Type *) DT_INST_REG_ADDR(0),
 	.irq_config_func = mcux_elcdif_config_func_1,
-#ifdef CONFIG_MCUX_ELCDIF_PANEL_RK043FN02H
 	.rgb_mode = {
-		.panelWidth = 480,
-		.panelHeight = 272,
-		.hsw = 41,
-		.hfp = 4,
-		.hbp = 8,
-		.vsw = 10,
-		.vfp = 4,
-		.vbp = 2,
-		.polarityFlags = kELCDIF_DataEnableActiveHigh |
-				 kELCDIF_VsyncActiveLow |
-				 kELCDIF_HsyncActiveLow |
-				 kELCDIF_DriveDataOnRisingClkEdge,
+		.panelWidth = CONFIG_MCUX_ELCDIF_PANEL_RGB_WIDTH,
+		.panelHeight = CONFIG_MCUX_ELCDIF_PANEL_RGB_HEIGHT,
+		.hsw = CONFIG_MCUX_ELCDIF_PANEL_RGB_HSW,
+		.hfp = CONFIG_MCUX_ELCDIF_PANEL_RGB_HFP,
+		.hbp = CONFIG_MCUX_ELCDIF_PANEL_RGB_HBP,
+		.vsw = CONFIG_MCUX_ELCDIF_PANEL_RGB_VSW,
+		.vfp = CONFIG_MCUX_ELCDIF_PANEL_RGB_VFP,
+		.vbp = CONFIG_MCUX_ELCDIF_PANEL_RGB_VBP,
+		.polarityFlags = 
+		#ifdef  CONFIG_MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_DE_HIGH
+				kELCDIF_DataEnableActiveHigh |
+		#else
+				kELCDIF_DataEnableActiveLow |
+		#endif
+		#ifdef CONFIG_MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_VSYNC_HIGH
+				kELCDIF_VsyncActiveHigh |
+		#else
+				kELCDIF_VsyncActiveLow |
+		#endif
+		#ifdef CONFIG_MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_HSYNC_HIGH
+				kELCDIF_HsyncActiveHigh |
+		#else 
+				kELCDIF_HsyncActiveLow |
+		#endif
+		#ifdef CONFIG_MCUX_ELCDIF_PANEL_RGB_POLARITY_FLAG_CLKEDGE_RISING
+				kELCDIF_DriveDataOnRisingClkEdge,
+		#else
+				kELCDIF_DriveDataOnFallingClkEdge,
+		#endif
+		#if CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT == CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RAW8
+		.pixelFormat = kELCDIF_PixelFormatRAW8,
+		#elif CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT  ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB565
 		.pixelFormat = kELCDIF_PixelFormatRGB565,
+		#elif CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT  ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB666
+		.pixelFormat = kELCDIF_PixelFormatRGB666,
+		#elif CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT  ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB8888
+		.pixelFormat = kELCDIF_PixelFormatXRGB8888,
+		#elif CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT  ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_PIXEL_FMT_RGB888
+		.pixelFormat = kELCDIF_PixelFormatRGB888,
+		#endif
+		#if     CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS_8
+		.dataBus = kELCDIF_DataBus8Bit,
+		#elif   CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS_16
 		.dataBus = kELCDIF_DataBus16Bit,
+		#elif   CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS_18
+		.dataBus = kELCDIF_DataBus18Bit,
+		#elif   CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS ==  CONFIG_MCUX_ELCDIF_PANEL_RGB_DBUS_24
+		.dataBus = kELCDIF_DataBus24Bit,
+		#endif
 	},
+	#if   CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888
+	.pixel_format = PIXEL_FORMAT_RGB_888,
+	#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_MONO01
+	.pixel_format = PIXEL_FORMAT_MONO01,
+	#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_MONO10
+	.pixel_format = PIXEL_FORMAT_MONO10,
+	#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_ARGB8888
+	.pixel_format = PIXEL_FORMAT_ARGB_8888,
+	#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565
+	.pixel_format = PIXEL_FORMAT_RGB_565,
+	#elif CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT ==  CONFIG_MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
 	.pixel_format = PIXEL_FORMAT_BGR_565,
-	.bits_per_pixel = 16,
-#endif
+	#endif
+	#ifdef CONFIG_MCUX_ELCDIF_PANEL_BITS_IN_PIXEL
+	.bits_per_pixel = CONFIG_MCUX_ELCDIF_PANEL_BITS_IN_PIXEL,
+	#endif
+	#ifdef CONFIG_MCUX_ELCDIF_PANEL_ORIENTATION_NORMAL
+	.orientation = DISPLAY_ORIENTATION_NORMAL,
+	#elif defined CONFIG_MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_90
+	.orientation = DISPLAY_ORIENTATION_ROTATED_90,
+	#elif defined CONFIG_MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_180
+	.orientation = DISPLAY_ORIENTATION_ROTATED_180,
+	#elif defined CONFIG_MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_270
+	.orientation = DISPLAY_ORIENTATION_ROTATED_270,
+	#else
+	#warning "Select correct display orientation !"
+	#endif
 };
 
 static struct mcux_elcdif_data mcux_elcdif_data_1;

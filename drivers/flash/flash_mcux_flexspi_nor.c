@@ -252,7 +252,7 @@ static int flash_flexspi_nor_erase_sector(const struct device *dev,
 		.dataSize = 0,
 	};
 
-	LOG_DBG("Erasing sector at 0x%08x", offset);
+	LOG_DBG("Erasing sector at 0x%08x", (uint32_t)offset);
 
 	return memc_flexspi_transfer(data->controller, &transfer);
 }
@@ -293,7 +293,7 @@ static int flash_flexspi_nor_page_program(const struct device *dev,
 		.dataSize = len,
 	};
 
-	LOG_DBG("Page programming %d bytes to 0x%08x", len, offset);
+	LOG_DBG("Page programming %d bytes to 0x%08x", len, (uint32_t)offset);
 
 	return memc_flexspi_transfer(data->controller, &transfer);
 }
@@ -526,7 +526,7 @@ static const struct flash_driver_api flash_flexspi_nor_api = {
 
 #define FLASH_FLEXSPI_DEVICE_CONFIG(n)					\
 	{								\
-		.flexspiRootClk = MHZ(120),				\
+		.flexspiRootClk = MHZ(45),				\
 		.flashSize = DT_INST_PROP(n, size) / 8 / KB(1),		\
 		.CSIntervalUnit =					\
 			CS_INTERVAL_UNIT(				\
