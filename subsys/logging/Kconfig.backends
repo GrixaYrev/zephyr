@@ -367,6 +367,15 @@ config LOG_BACKEND_FS_FILES_LIMIT
 	  Limit of number of files with logs. It is also limited by
 	  size of file system partition.
 
+config LOG_BACKEND_FS_AUTOSTART
+	bool "Automatically start file system backend"
+	default y
+	help
+		When enabled automatically start the file system backend on
+		application start. If file sistem isn't auto-mount this 
+		must be set to n and the backend must bestarted by the 
+		application later on.
+
 endif # LOG_BACKEND_FS
 
 endmenu
