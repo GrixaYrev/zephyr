@@ -163,8 +163,13 @@ manifest:
     - name: lv_lib_bmp
       remote: strim-git
       repo-path: zephyr/libraries/lv_lib_bmp
-      revision: daefcf96cf79a2fedcd417413d4ecb74f57d15f1
+      revision: 82ca7e1df9d88d7caa4afacdc89bf6e58bfa90a8
       path: modules/lib/gui/lv_lib_bmp
+    - name: lv_lib_qrcode
+      remote: strim-git
+      repo-path: zephyr/libraries/lv_lib_qrcode
+      revision: 59ff2a954ebc35b737733f9d19ab01ea8f6141de
+      path: modules/lib/gui/lv_lib_qrcode
     - name: lz4
       revision: 8e303c264fc21c2116dc612658003a22e933124d
       path: modules/lib/lz4
