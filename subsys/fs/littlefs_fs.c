@@ -44,15 +44,19 @@ static K_MEM_SLAB_DEFINE(lfs_dir_pool, sizeof(struct lfs_dir),
  */
 #define FC_HEAP_PER_ALLOC_OVERHEAD 24U
 
+#define CALCULATE_FC_HEAP_SIZE(_cache_size) \
+			((_cache_size + FC_HEAP_PER_ALLOC_OVERHEAD) *	\
+			CONFIG_FS_LITTLEFS_NUM_FILES)
+
 #if (CONFIG_FS_LITTLEFS_FC_HEAP_SIZE - 0) <= 0
 /* Auto-generate heap size from cache size and number of files */
-#undef CONFIG_FS_LITTLEFS_FC_HEAP_SIZE
-#define CONFIG_FS_LITTLEFS_FC_HEAP_SIZE						\
-	((CONFIG_FS_LITTLEFS_CACHE_SIZE + FC_HEAP_PER_ALLOC_OVERHEAD) *		\
-	CONFIG_FS_LITTLEFS_NUM_FILES)
+	#define FC_HEAP_SIZE	\
+			CALCULATE_FC_HEAP_SIZE(CONFIG_FS_LITTLEFS_CACHE_SIZE)
+#elif
+	#define FC_HEAP_SIZE CONFIG_FS_LITTLEFS_FC_HEAP_SIZE
 #endif /* CONFIG_FS_LITTLEFS_FC_HEAP_SIZE */
 
-static K_HEAP_DEFINE(file_cache_heap, CONFIG_FS_LITTLEFS_FC_HEAP_SIZE);
+static K_HEAP_DEFINE(file_cache_heap, FC_HEAP_SIZE);
 
 static inline void *fc_allocate(size_t size)
 {
@@ -648,6 +652,13 @@ static int littlefs_mount(struct fs_mount_t *mountp)
 		cache_size = CONFIG_FS_LITTLEFS_CACHE_SIZE;
 	}
 
+	/* check is heap size enough for CONFIG_FS_LITTLEFS_NUM_FILES */
+	lfs_size_t calculated_heap_size = CALCULATE_FC_HEAP_SIZE(cache_size);
+	if (calculated_heap_size > FC_HEAP_SIZE) {
+		LOG_WRN("fc heap (%s) isn't enough for files max count",
+																			log_strdup(mountp->mnt_point));
+	}
+
 	lfs_size_t lookahead_size = lcp->lookahead_size;
 
 	if (lookahead_size == 0) {
@@ -772,26 +783,21 @@ static const struct fs_file_system_t littlefs_fs = {
 
 #define DEFINE_FS(inst) \
 static uint8_t __aligned(4) \
-	read_buffer_##inst[DT_INST_PROP(inst, cache_size)]; \
+	read_buffer_##inst[DT_INST_PROP_OR(inst, cache_size, CONFIG_FS_LITTLEFS_CACHE_SIZE)]; \
 static uint8_t __aligned(4) \
-	prog_buffer_##inst[DT_INST_PROP(inst, cache_size)]; \
-static uint32_t lookahead_buffer_##inst[DT_INST_PROP(inst, lookahead_size) \
+	prog_buffer_##inst[DT_INST_PROP_OR(inst, cache_size, CONFIG_FS_LITTLEFS_CACHE_SIZE)]; \
+static uint32_t lookahead_buffer_##inst[DT_INST_PROP_OR(inst, lookahead_size, CONFIG_FS_LITTLEFS_LOOKAHEAD_SIZE) \
 					/ sizeof(uint32_t)]; \
-BUILD_ASSERT(DT_INST_PROP(inst, read_size) > 0); \
-BUILD_ASSERT(DT_INST_PROP(inst, prog_size) > 0); \
-BUILD_ASSERT(DT_INST_PROP(inst, cache_size) > 0); \
-BUILD_ASSERT(DT_INST_PROP(inst, lookahead_size) > 0); \
-BUILD_ASSERT((DT_INST_PROP(inst, lookahead_size) % 8) == 0); \
-BUILD_ASSERT((DT_INST_PROP(inst, cache_size) \
-	      % DT_INST_PROP(inst, read_size)) == 0); \
-BUILD_ASSERT((DT_INST_PROP(inst, cache_size) \
-	      % DT_INST_PROP(inst, prog_size)) == 0); \
 static struct fs_littlefs fs_data_##inst = { \
 	.cfg = { \
-		.read_size = DT_INST_PROP(inst, read_size), \
-		.prog_size = DT_INST_PROP(inst, prog_size), \
-		.cache_size = DT_INST_PROP(inst, cache_size), \
-		.lookahead_size = DT_INST_PROP(inst, lookahead_size), \
+		.read_size = DT_INST_PROP_OR(inst, read_size, \
+																	CONFIG_FS_LITTLEFS_READ_SIZE), \
+		.prog_size = DT_INST_PROP_OR(inst, prog_size, \
+																	CONFIG_FS_LITTLEFS_PROG_SIZE), \
+		.cache_size = DT_INST_PROP_OR(inst, cache_size, \
+																	CONFIG_FS_LITTLEFS_CACHE_SIZE), \
+		.lookahead_size = DT_INST_PROP_OR(inst, lookahead_size, \
+																	CONFIG_FS_LITTLEFS_LOOKAHEAD_SIZE), \
 		.read_buffer = read_buffer_##inst, \
 		.prog_buffer = prog_buffer_##inst, \
 		.lookahead_buffer = lookahead_buffer_##inst, \
