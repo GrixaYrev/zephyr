@@ -842,11 +842,16 @@ static int nrf5_configure(const struct device *dev,
 		uint8_t ext_addr_le[EXTENDED_ADDRESS_SIZE];
 
 		sys_put_le16(config->ack_ie.short_addr, short_addr_le);
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
-		memcpy(ext_addr_le, config->ack_ie.ext_addr, EXTENDED_ADDRESS_SIZE);
-#else
+		/**
+		 * The extended address field passed to this function starts
+		 * with the leftmost octet and ends with the rightmost octet.
+		 * The IEEE 802.15.4 transmission order mandates this order to be
+		 * reversed in a transmitted frame.
+		 *
+		 * The nrf_802154_ack_data_set expects extended address in transmission
+		 * order.
+		 */
 		sys_memcpy_swap(ext_addr_le, config->ack_ie.ext_addr, EXTENDED_ADDRESS_SIZE);
-#endif
 
 		if (config->ack_ie.data_len > 0) {
 			nrf_802154_ack_data_set(short_addr_le, false, config->ack_ie.data,
@@ -968,14 +973,17 @@ void nrf_802154_transmitted_raw(uint8_t *frame,
 	nrf5_data.tx_frame_is_secured = metadata->frame_props.is_secured;
 	nrf5_data.tx_frame_mac_hdr_rdy = metadata->frame_props.dynamic_data_is_set;
 	nrf5_data.ack_frame.psdu = metadata->data.transmitted.p_ack;
-	nrf5_data.ack_frame.rssi = metadata->data.transmitted.power;
-	nrf5_data.ack_frame.lqi = metadata->data.transmitted.lqi;
 
-#if !defined(CONFIG_NRF_802154_SER_HOST) && defined(CONFIG_NET_PKT_TIMESTAMP)
-	nrf5_data.ack_frame.time =
-		nrf_802154_first_symbol_timestamp_get(
-			metadata->data.transmitted.time, nrf5_data.ack_frame.psdu[0]);
+	if (nrf5_data.ack_frame.psdu) {
+		nrf5_data.ack_frame.rssi = metadata->data.transmitted.power;
+		nrf5_data.ack_frame.lqi = metadata->data.transmitted.lqi;
+
+#if !IS_ENABLED(CONFIG_NRF_802154_SER_HOST) && IS_ENABLED(CONFIG_NET_PKT_TIMESTAMP)
+		nrf5_data.ack_frame.time =
+			nrf_802154_first_symbol_timestamp_get(
+				metadata->data.transmitted.time, nrf5_data.ack_frame.psdu[0]);
 #endif
+	}
 
 	k_sem_give(&nrf5_data.tx_wait);
 }

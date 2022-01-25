@@ -629,6 +629,7 @@ struct shell_flags {
 	uint32_t last_nl     :8; /*!< Last received new line character */
 	uint32_t cmd_ctx     :1; /*!< Shell is executing command */
 	uint32_t print_noinit:1; /*!< Print request from not initialized shell*/
+	uint32_t panic_mode  :1; /*!< Shell in panic mode */
 };
 
 BUILD_ASSERT((sizeof(struct shell_flags) == sizeof(uint32_t)),
@@ -698,6 +699,10 @@ struct shell_ctx {
 	volatile union shell_internal internal; /*!< Internal shell data.*/
 
 	struct k_poll_signal signals[SHELL_SIGNALS];
+
+	/*!< Events that should be used only internally by shell thread.
+	 * Event for SHELL_SIGNAL_TXDONE is initialized but unused.
+	 */
 	struct k_poll_event events[SHELL_SIGNALS];
 
 	struct k_mutex wr_mtx;

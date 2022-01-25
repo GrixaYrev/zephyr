@@ -31,11 +31,6 @@ cmake_minimum_required(VERSION 3.20.0)
 # CMP0002: "Logical target names must be globally unique"
 cmake_policy(SET CMP0002 NEW)
 
-# Use the old CMake behaviour until the build scripts have been ported
-# to the new behaviour.
-# CMP0079: "target_link_libraries() allows use with targets in other directories"
-cmake_policy(SET CMP0079 OLD)
-
 # Use the old CMake behaviour until we are updating the CMake 3.20 as minimum
 # required. This ensure that CMake >=3.20 will be consistent with older CMakes.
 # CMP0116: Ninja generators transform DEPFILE s from add_custom_command().
@@ -464,10 +459,6 @@ elseif(CACHED_CONF_FILE)
 elseif(DEFINED ENV{CONF_FILE})
   set(CONF_FILE $ENV{CONF_FILE})
 
-elseif(COMMAND set_conf_file)
-  message(WARNING "'set_conf_file' is deprecated, it will be removed in a future release.")
-  set_conf_file()
-
 elseif(EXISTS   ${APPLICATION_SOURCE_DIR}/prj_${BOARD}.conf)
   set(CONF_FILE ${APPLICATION_SOURCE_DIR}/prj_${BOARD}.conf)
 
@@ -498,10 +489,7 @@ zephyr_boilerplate_watch(CONF_FILE)
 
 if(DTC_OVERLAY_FILE)
   # DTC_OVERLAY_FILE has either been specified on the cmake CLI or is already
-  # in the CMakeCache.txt. This has precedence over the environment
-  # variable DTC_OVERLAY_FILE
-elseif(DEFINED ENV{DTC_OVERLAY_FILE})
-  set(DTC_OVERLAY_FILE $ENV{DTC_OVERLAY_FILE})
+  # in the CMakeCache.txt.
 elseif(APP_BOARD_DTS)
   set(DTC_OVERLAY_FILE ${APP_BOARD_DTS})
 elseif(EXISTS          ${APPLICATION_SOURCE_DIR}/${BOARD}.overlay)
@@ -557,6 +545,14 @@ set(SOC_NAME   ${CONFIG_SOC})
 set(SOC_SERIES ${CONFIG_SOC_SERIES})
 set(SOC_TOOLCHAIN_NAME ${CONFIG_SOC_TOOLCHAIN_NAME})
 set(SOC_FAMILY ${CONFIG_SOC_FAMILY})
+
+# For the gen_app_partitions.py to work correctly, we must ensure that
+# all targets exports their compile commands to fetch object files.
+# We enable it unconditionally, as this is also useful for several IDEs
+set(CMAKE_EXPORT_COMPILE_COMMANDS TRUE CACHE BOOL
+    "Export CMake compile commands. Used by gen_app_partitions.py script"
+    FORCE
+)
 
 if("${SOC_SERIES}" STREQUAL "")
   set(SOC_PATH ${SOC_NAME})

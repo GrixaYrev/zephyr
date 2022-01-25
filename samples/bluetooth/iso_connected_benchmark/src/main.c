@@ -272,9 +272,9 @@ static struct bt_iso_chan_ops iso_ops = {
 	.disconnected	= iso_disconnected,
 };
 
-static int iso_accept(struct bt_conn *conn, struct bt_iso_chan **chan)
+static int iso_accept(struct bt_conn *acl, struct bt_iso_chan **chan)
 {
-	LOG_INF("Incoming ISO request");
+	LOG_INF("Incoming ISO request from %p", (void *)acl);
 
 	for (int i = 0; i < ARRAY_SIZE(iso_chans); i++) {
 		if (iso_chans[i].state == BT_ISO_DISCONNECTED) {
@@ -409,8 +409,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
 	LOG_INF("Disconnected: %s (reason 0x%02x)", addr, reason);
 
+	bt_conn_unref(default_conn);
 	default_conn = NULL;
-
 	k_sem_give(&sem_disconnected);
 }
 
@@ -453,8 +453,7 @@ static int parse_rtn_arg(struct bt_iso_chan_io_qos *qos)
 	}
 
 	rtn = strtoul(buffer, NULL, 0);
-	/* TODO: Replace literal int with a #define once it has been created */
-	if (rtn > 16) {
+	if (rtn > BT_ISO_CONNECTED_RTN_MAX) {
 		printk("Invalid RTN %llu", rtn);
 		return -EINVAL;
 	}
@@ -478,7 +477,7 @@ static int parse_interval_arg(void)
 
 	interval = strtoul(buffer, NULL, 0);
 	/* TODO: Replace literal ints with a #define once it has been created */
-	if (interval < 0x100 || interval > 0xFFFFF) {
+	if (interval < BT_ISO_INTERVAL_MIN || interval > BT_ISO_INTERVAL_MAX) {
 		printk("Invalid interval %llu", interval);
 		return -EINVAL;
 	}
@@ -501,8 +500,7 @@ static int parse_latency_arg(void)
 	}
 
 	latency = strtoul(buffer, NULL, 0);
-	/* TODO: Replace literal int with a #define once it has been created */
-	if (latency > 0xFA0) {
+	if (latency < BT_ISO_LATENCY_MIN || latency > BT_ISO_LATENCY_MAX) {
 		printk("Invalid latency %llu", latency);
 		return -EINVAL;
 	}
@@ -551,8 +549,8 @@ static int parse_sdu_arg(struct bt_iso_chan_io_qos *qos)
 	}
 
 	sdu = strtoul(buffer, NULL, 0);
-	/* TODO: Replace literal int with a #define once it has been created */
-	if (sdu > 0xFFF || sdu < sizeof(uint32_t) /* room for the counter */) {
+	if (sdu > MIN(BT_ISO_MAX_SDU, sizeof(iso_data)) ||
+	    sdu < sizeof(uint32_t) /* room for the counter */) {
 		printk("Invalid SDU %llu", sdu);
 		return -EINVAL;
 	}
@@ -575,7 +573,7 @@ static int parse_cis_count_arg(void)
 	}
 
 	cis_count = strtoul(buffer, NULL, 0);
-	if (cis_count > CONFIG_BT_ISO_MAX_CHAN) {
+	if (cis_count > MAX(BT_ISO_MAX_GROUP_ISO_COUNT, CONFIG_BT_ISO_MAX_CHAN)) {
 		printk("Invalid CIS count %llu", cis_count);
 		return -EINVAL;
 	}
@@ -790,8 +788,8 @@ static int central_create_cig(void)
 	LOG_INF("Connecting ISO channels");
 
 	for (int i = 0; i < cig_create_param.num_cis; i++) {
-		connect_param[i].conn = default_conn;
-		connect_param[i].iso = &iso_chans[i];
+		connect_param[i].acl = default_conn;
+		connect_param[i].iso_chan = &iso_chans[i];
 	}
 
 	err = bt_iso_chan_connect(connect_param, cig_create_param.num_cis);
@@ -849,8 +847,21 @@ static int cleanup(void)
 			return err;
 		}
 
-		bt_conn_unref(default_conn);
+		err = k_sem_take(&sem_disconnected, K_FOREVER);
+		if (err != 0) {
+			LOG_ERR("failed to take sem_disconnected: %d", err);
+			return err;
+		}
 	} /* else ACL already disconnected */
+
+	if (cig) {
+		err = bt_iso_cig_terminate(cig);
+		if (err != 0) {
+			LOG_ERR("Could not terminate CIG: %d", err);
+			return err;
+		}
+		cig = NULL;
+	}
 
 	return err;
 }
@@ -896,7 +907,8 @@ static int run_central(void)
 		return err;
 	}
 
-	bt_conn_unref(default_conn);
+	LOG_INF("Disconnected - Cleaning up");
+	(void)k_work_cancel_delayable(&iso_send_work);
 
 	for (int i = 0; i < cig_create_param.num_cis; i++) {
 		err = k_sem_take(&sem_iso_disconnected, K_FOREVER);
@@ -906,8 +918,12 @@ static int run_central(void)
 		}
 	}
 
-	LOG_INF("Disconnected - Cleaning up");
-	(void)k_work_cancel_delayable(&iso_send_work);
+	err = bt_iso_cig_terminate(cig);
+	if (err != 0) {
+		LOG_ERR("Could not terminate CIG: %d", err);
+		return err;
+	}
+	cig = NULL;
 
 	return 0;
 }
@@ -979,8 +995,6 @@ static int run_peripheral(void)
 		LOG_ERR("failed to take sem_disconnected: %d", err);
 		return err;
 	}
-
-	bt_conn_unref(default_conn);
 
 	for (int i = 0; i < cig_create_param.num_cis; i++) {
 		err = k_sem_take(&sem_iso_disconnected, K_FOREVER);

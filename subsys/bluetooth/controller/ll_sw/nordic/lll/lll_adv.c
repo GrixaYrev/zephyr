@@ -45,8 +45,6 @@
 #include "lll_prof_internal.h"
 #include "lll_df_internal.h"
 
-#include "ull_internal.h"
-
 #define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
 #define LOG_MODULE_NAME bt_ctlr_lll_adv
 #include "common/log.h"
@@ -660,7 +658,7 @@ bool lll_adv_scan_req_check(struct lll_adv *lll, struct pdu_adv *sr,
 						sr->scan_req.scan_addr,
 						rl_idx)) ||
 		(((lll->filter_policy & 0x01) != 0) &&
-		 (devmatch_ok || ull_filter_lll_irk_whitelisted(*rl_idx)))) &&
+		 (devmatch_ok || ull_filter_lll_irk_in_fal(*rl_idx)))) &&
 		isr_rx_sr_adva_check(tx_addr, addr, sr);
 #else
 	return (((lll->filter_policy & 0x01) == 0U) || devmatch_ok) &&
@@ -722,7 +720,7 @@ bool lll_adv_connect_ind_check(struct lll_adv *lll, struct pdu_adv *ci,
 						ci->connect_ind.init_addr,
 						rl_idx)) ||
 		(((lll->filter_policy & 0x02) != 0) &&
-		 (devmatch_ok || ull_filter_lll_irk_whitelisted(*rl_idx)))) &&
+		 (devmatch_ok || ull_filter_lll_irk_in_fal(*rl_idx)))) &&
 	       isr_rx_ci_adva_check(tx_addr, addr, ci);
 #else
 	return (((lll->filter_policy & 0x02) == 0) ||
@@ -858,7 +856,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	 * transmitting connectable advertising event if cancelled flag is set.
 	 */
 	if (unlikely(lll->conn &&
-		(lll->conn->slave.initiated || lll->conn->slave.cancelled))) {
+		(lll->conn->periph.initiated || lll->conn->periph.cancelled))) {
 		radio_isr_set(lll_isr_early_abort, lll);
 		radio_disable();
 
@@ -908,14 +906,14 @@ static int prepare_cb(struct lll_prepare_param *p)
 	} else
 #endif /* CONFIG_BT_CTLR_PRIVACY */
 
-	if (IS_ENABLED(CONFIG_BT_CTLR_FILTER) && lll->filter_policy) {
+	if (IS_ENABLED(CONFIG_BT_CTLR_FILTER_ACCEPT_LIST) && lll->filter_policy) {
 		/* Setup Radio Filter */
-		struct lll_filter *wl = ull_filter_lll_get(true);
+		struct lll_filter *fal = ull_filter_lll_get(true);
 
 
-		radio_filter_configure(wl->enable_bitmask,
-				       wl->addr_type_bitmask,
-				       (uint8_t *)wl->bdaddr);
+		radio_filter_configure(fal->enable_bitmask,
+				       fal->addr_type_bitmask,
+				       (uint8_t *)fal->bdaddr);
 	}
 
 	ticks_at_event = p->ticks_at_expire;
@@ -1093,7 +1091,7 @@ static void isr_tx(void *param)
 	radio_tmr_hcto_configure(hcto);
 
 	/* capture end of CONNECT_IND PDU, used for calculating first
-	 * slave event.
+	 * peripheral event.
 	 */
 	radio_tmr_end_capture();
 
@@ -1207,7 +1205,7 @@ static void isr_done(void *param)
 	 */
 	if (lll->chan_map_curr &&
 #if defined(CONFIG_BT_PERIPHERAL)
-	    (!lll->conn || !lll->conn->slave.cancelled) &&
+	    (!lll->conn || !lll->conn->periph.cancelled) &&
 #endif /* CONFIG_BT_PERIPHERAL */
 	    1) {
 		struct pdu_adv *pdu;
@@ -1219,9 +1217,13 @@ static void isr_done(void *param)
 		start_us = radio_tmr_start_now(1);
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
-		if (lll->aux) {
-			ull_adv_aux_lll_offset_fill(lll->aux->ticks_offset,
-						    start_us, pdu);
+		struct lll_adv_aux *lll_aux;
+
+		lll_aux = lll->aux;
+		if (lll_aux) {
+			(void)ull_adv_aux_lll_offset_fill(pdu,
+							  lll_aux->ticks_offset,
+							  start_us);
 		}
 #else /* !CONFIG_BT_CTLR_ADV_EXT */
 		ARG_UNUSED(pdu);
@@ -1449,7 +1451,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 	 */
 	} else if ((pdu_rx->type == PDU_ADV_TYPE_CONNECT_IND) &&
 		   (pdu_rx->len == sizeof(struct pdu_adv_connect_ind)) &&
-		   lll->conn && !lll->conn->slave.cancelled &&
+		   lll->conn && !lll->conn->periph.cancelled &&
 		   lll_adv_connect_ind_check(lll, pdu_rx, tx_addr, addr,
 					     rx_addr, tgt_addr,
 					     devmatch_ok, &rl_idx)) {
@@ -1483,7 +1485,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 #endif /* CONFIG_BT_CTLR_CONN_RSSI */
 
 		/* Stop further LLL radio events */
-		lll->conn->slave.initiated = 1;
+		lll->conn->periph.initiated = 1;
 
 		rx = ull_pdu_rx_alloc();
 
@@ -1540,3 +1542,15 @@ static inline bool isr_rx_ci_adva_check(uint8_t tx_addr, uint8_t *addr,
 	return (tx_addr == ci->rx_addr) &&
 		!memcmp(addr, ci->connect_ind.adv_addr, BDADDR_SIZE);
 }
+
+#if defined(CONFIG_ZTEST)
+uint32_t lll_adv_free_pdu_fifo_count_get(void)
+{
+	return MFIFO_AVAIL_COUNT_GET(pdu_free);
+}
+
+uint32_t lll_adv_pdu_mem_free_count_get(void)
+{
+	return mem_free_count_get(mem_pdu.free);
+}
+#endif /* CONFIG_ZTEST */

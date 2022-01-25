@@ -214,7 +214,15 @@ extern void k_thread_foreach_unlocked(
 /* x86 Bitmask definitions for threads user options */
 
 #if defined(CONFIG_FPU_SHARING) && defined(CONFIG_X86_SSE)
-/* thread uses SSEx (and also FP) registers */
+/**
+ * @brief FP and SSE registers are managed by context switch on x86
+ *
+ * @details
+ * This option indicates that the thread uses the x86 CPU's floating point
+ * and SSE registers. This instructs the kernel to take additional steps to
+ * save and restore the contents of these registers when scheduling
+ * the thread. No effect if @kconfig{CONFIG_X86_SSE} is not enabled.
+ */
 #define K_SSE_REGS (BIT(7))
 #endif
 #endif
@@ -735,7 +743,7 @@ __syscall void k_thread_priority_set(k_tid_t thread, int prio);
  * integers.  The number of cycles between the "first" deadline in the
  * scheduler queue and the "last" deadline must be less than 2^31 (i.e
  * a signed non-negative quantity).  Failure to adhere to this rule
- * may result in scheduled threads running in an incorrect dealine
+ * may result in scheduled threads running in an incorrect deadline
  * order.
  *
  * @note Despite the API naming, the scheduler makes no guarantees the
@@ -4772,8 +4780,8 @@ struct k_mem_slab {
 #define Z_MEM_SLAB_INITIALIZER(obj, slab_buffer, slab_block_size, \
 			       slab_num_blocks) \
 	{ \
-	.lock = {}, \
 	.wait_q = Z_WAIT_Q_INIT(&obj.wait_q), \
+	.lock = {}, \
 	.num_blocks = slab_num_blocks, \
 	.block_size = slab_block_size, \
 	.buffer = slab_buffer, \
@@ -4812,7 +4820,8 @@ struct k_mem_slab {
  * @param slab_align Alignment of the memory slab's buffer (power of 2).
  */
 #define K_MEM_SLAB_DEFINE(name, slab_block_size, slab_num_blocks, slab_align) \
-	char __noinit __aligned(WB_UP(slab_align)) \
+	char __noinit_named(k_mem_slab_buf_##name) \
+	   __aligned(WB_UP(slab_align)) \
 	   _k_mem_slab_buf_##name[(slab_num_blocks) * WB_UP(slab_block_size)]; \
 	STRUCT_SECTION_ITERABLE(k_mem_slab, name) = \
 		Z_MEM_SLAB_INITIALIZER(name, _k_mem_slab_buf_##name, \
@@ -5023,6 +5032,33 @@ void k_heap_free(struct k_heap *h, void *mem);
 #define Z_HEAP_MIN_SIZE (sizeof(void *) > 4 ? 56 : 44)
 
 /**
+ * @brief Define a static k_heap in the specified linker section
+ *
+ * This macro defines and initializes a static memory region and
+ * k_heap of the requested size in the specified linker section.
+ * After kernel start, &name can be used as if k_heap_init() had
+ * been called.
+ *
+ * Note that this macro enforces a minimum size on the memory region
+ * to accommodate metadata requirements.  Very small heaps will be
+ * padded to fit.
+ *
+ * @param name Symbol name for the struct k_heap object
+ * @param bytes Size of memory region, in bytes
+ * @param in_section __attribute__((section(name))
+ */
+#define Z_HEAP_DEFINE_IN_SECT(name, bytes, in_section)		\
+	char in_section						\
+	     __aligned(8) /* CHUNK_UNIT */			\
+	     kheap_##name[MAX(bytes, Z_HEAP_MIN_SIZE)];		\
+	STRUCT_SECTION_ITERABLE(k_heap, name) = {		\
+		.heap = {					\
+			.init_mem = kheap_##name,		\
+			.init_bytes = MAX(bytes, Z_HEAP_MIN_SIZE), \
+		 },						\
+	}
+
+/**
  * @brief Define a static k_heap
  *
  * This macro defines and initializes a static memory region and
@@ -5037,14 +5073,25 @@ void k_heap_free(struct k_heap *h, void *mem);
  * @param bytes Size of memory region, in bytes
  */
 #define K_HEAP_DEFINE(name, bytes)				\
-	char __aligned(8) /* CHUNK_UNIT */			\
-	     kheap_##name[MAX(bytes, Z_HEAP_MIN_SIZE)];		\
-	STRUCT_SECTION_ITERABLE(k_heap, name) = {		\
-		.heap = {					\
-			.init_mem = kheap_##name,		\
-			.init_bytes = MAX(bytes, Z_HEAP_MIN_SIZE), \
-		 },						\
-	}
+	Z_HEAP_DEFINE_IN_SECT(name, bytes,			\
+			      __noinit_named(kheap_buf_##name))
+
+/**
+ * @brief Define a static k_heap in uncached memory
+ *
+ * This macro defines and initializes a static memory region and
+ * k_heap of the requested size in uncache memory.  After kernel
+ * start, &name can be used as if k_heap_init() had been called.
+ *
+ * Note that this macro enforces a minimum size on the memory region
+ * to accommodate metadata requirements.  Very small heaps will be
+ * padded to fit.
+ *
+ * @param name Symbol name for the struct k_heap object
+ * @param bytes Size of memory region, in bytes
+ */
+#define K_HEAP_DEFINE_NOCACHE(name, bytes)			\
+	Z_HEAP_DEFINE_IN_SECT(name, bytes, __nocache)
 
 /**
  * @}

@@ -369,7 +369,13 @@ static void shell_pend_on_txdone(const struct shell *shell)
 {
 	if (IS_ENABLED(CONFIG_MULTITHREADING) &&
 	    (shell->ctx->state < SHELL_STATE_PANIC_MODE_ACTIVE)) {
-		k_poll(&shell->ctx->events[SHELL_SIGNAL_TXDONE], 1, K_FOREVER);
+		struct k_poll_event event;
+
+		k_poll_event_init(&event,
+				  K_POLL_TYPE_SIGNAL,
+				  K_POLL_MODE_NOTIFY_ONLY,
+				  &shell->ctx->signals[SHELL_SIGNAL_TXDONE]);
+		k_poll(&event, 1, K_FOREVER);
 		k_poll_signal_reset(&shell->ctx->signals[SHELL_SIGNAL_TXDONE]);
 	} else {
 		/* Blocking wait in case of bare metal. */
@@ -473,19 +479,20 @@ void z_shell_vfprintf(const struct shell *shell, enum shell_vt100_color color,
 	}
 }
 
-void z_shell_fprintf(const struct shell *shell,
-			    enum shell_vt100_color color,
-			    const char *fmt, ...)
+void z_shell_fprintf(const struct shell *sh,
+		     enum shell_vt100_color color,
+		     const char *fmt, ...)
 {
-	__ASSERT_NO_MSG(shell);
-	__ASSERT(!k_is_in_isr(), "Thread context required.");
-	__ASSERT_NO_MSG(shell->ctx);
-	__ASSERT_NO_MSG(shell->fprintf_ctx);
+	__ASSERT_NO_MSG(sh);
+	__ASSERT_NO_MSG(sh->ctx);
+	__ASSERT_NO_MSG(sh->fprintf_ctx);
 	__ASSERT_NO_MSG(fmt);
+	__ASSERT(z_flag_panic_mode_get(sh) || !k_is_in_isr(),
+		 "Thread context required.");
 
 	va_list args;
 
 	va_start(args, fmt);
-	z_shell_vfprintf(shell, color, fmt, args);
+	z_shell_vfprintf(sh, color, fmt, args);
 	va_end(args);
 }

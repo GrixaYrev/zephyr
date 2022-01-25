@@ -210,7 +210,7 @@ static inline int stm32_clock_control_off(const struct device *dev,
 	defined(CONFIG_SOC_SERIES_STM32WLX) || \
 	defined(CONFIG_SOC_SERIES_STM32G4X)
 	case STM32_CLOCK_BUS_AHB3:
-		LL_AHB3_GRP1_EnableClock(pclken->enr);
+		LL_AHB3_GRP1_DisableClock(pclken->enr);
 		break;
 #endif /* CONFIG_SOC_SERIES_STM32_* */
 	case STM32_CLOCK_BUS_APB1:
@@ -636,13 +636,11 @@ int stm32_clock_control_init(const struct device *dev)
 		LL_SetFlashLatency(new_flash_freq);
 	}
 
-#if !defined(CONFIG_SOC_SERIES_STM32WBX)
 	/* Set MSI Range */
 #if !defined(CONFIG_SOC_SERIES_STM32WBX)
 	LL_RCC_MSI_EnableRangeSelection();
 #endif
 	LL_RCC_MSI_SetRange(STM32_MSI_RANGE << RCC_CR_MSIRANGE_Pos);
-#endif
 
 #if STM32_MSI_PLL_MODE
 	/* Enable MSI hardware auto calibration */

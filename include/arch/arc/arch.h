@@ -43,6 +43,40 @@
 #endif
 #endif
 
+#if defined(CONFIG_ARC_FIRQ) && defined(CONFIG_ISA_ARCV3)
+#error "Unsupported configuration: ARC_FIRQ and ISA_ARCV3"
+#endif
+
+/*
+ * We don't allow the configuration with FIRQ enabled and only one interrupt priority level
+ * (so all interrupts are FIRQ). Such configuration isn't supported in software and it is not
+ * beneficial from the performance point of view.
+ */
+#if defined(CONFIG_ARC_FIRQ) && CONFIG_NUM_IRQ_PRIO_LEVELS < 2
+#error "Unsupported configuration: ARC_FIRQ and (NUM_IRQ_PRIO_LEVELS < 2)"
+#endif
+
+#if CONFIG_RGF_NUM_BANKS > 1 && !defined(CONFIG_ARC_FIRQ)
+#error "Unsupported configuration: (RGF_NUM_BANKS > 1) and !ARC_FIRQ"
+#endif
+
+/*
+ * It's required to have more than one interrupt priority level to use second register bank
+ * - otherwise all interrupts will use same register bank. Such configuration isn't supported in
+ * software and it is not beneficial from the performance point of view.
+ */
+#if CONFIG_RGF_NUM_BANKS > 1 && CONFIG_NUM_IRQ_PRIO_LEVELS < 2
+#error "Unsupported configuration: (RGF_NUM_BANKS > 1) and (NUM_IRQ_PRIO_LEVELS < 2)"
+#endif
+
+#if defined(CONFIG_ARC_FIRQ_STACK) && !defined(CONFIG_ARC_FIRQ)
+#error "Unsupported configuration: ARC_FIRQ_STACK and !ARC_FIRQ"
+#endif
+
+#if defined(CONFIG_ARC_FIRQ_STACK) && CONFIG_RGF_NUM_BANKS < 2
+#error "Unsupported configuration: ARC_FIRQ_STACK and (RGF_NUM_BANKS < 2)"
+#endif
+
 #ifndef _ASMLANGUAGE
 
 #ifdef __cplusplus
@@ -66,7 +100,7 @@ extern "C" {
 #ifdef CONFIG_ARC_CORE_MPU
 #if CONFIG_ARC_MPU_VER == 2
 #define Z_ARC_MPU_ALIGN	2048
-#elif CONFIG_ARC_MPU_VER == 4
+#elif (CONFIG_ARC_MPU_VER == 3) || (CONFIG_ARC_MPU_VER == 4) || (CONFIG_ARC_MPU_VER == 6)
 #define Z_ARC_MPU_ALIGN	32
 #else
 #error "Unsupported MPU version"

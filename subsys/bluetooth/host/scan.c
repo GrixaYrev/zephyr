@@ -160,11 +160,11 @@ static int start_le_scan_ext(struct bt_hci_ext_scan_phy *phy_1m,
 	set_param->own_addr_type = own_addr_type;
 	set_param->phys = 0;
 
-	if (IS_ENABLED(CONFIG_BT_WHITELIST) &&
-	    atomic_test_bit(bt_dev.flags, BT_DEV_SCAN_WL)) {
-		set_param->filter_policy = BT_HCI_LE_SCAN_FP_USE_WHITELIST;
+	if (IS_ENABLED(CONFIG_BT_FILTER_ACCEPT_LIST) &&
+	    atomic_test_bit(bt_dev.flags, BT_DEV_SCAN_FILTERED)) {
+		set_param->filter_policy = BT_HCI_LE_SCAN_FP_BASIC_FILTER;
 	} else {
-		set_param->filter_policy = BT_HCI_LE_SCAN_FP_NO_WHITELIST;
+		set_param->filter_policy = BT_HCI_LE_SCAN_FP_BASIC_NO_FILTER;
 	}
 
 	if (phy_1m) {
@@ -209,11 +209,11 @@ static int start_le_scan_legacy(uint8_t scan_type, uint16_t interval, uint16_t w
 	set_param.interval = sys_cpu_to_le16(interval);
 	set_param.window = sys_cpu_to_le16(window);
 
-	if (IS_ENABLED(CONFIG_BT_WHITELIST) &&
-	    atomic_test_bit(bt_dev.flags, BT_DEV_SCAN_WL)) {
-		set_param.filter_policy = BT_HCI_LE_SCAN_FP_USE_WHITELIST;
+	if (IS_ENABLED(CONFIG_BT_FILTER_ACCEPT_LIST) &&
+	    atomic_test_bit(bt_dev.flags, BT_DEV_SCAN_FILTERED)) {
+		set_param.filter_policy = BT_HCI_LE_SCAN_FP_BASIC_FILTER;
 	} else {
-		set_param.filter_policy = BT_HCI_LE_SCAN_FP_NO_WHITELIST;
+		set_param.filter_policy = BT_HCI_LE_SCAN_FP_BASIC_NO_FILTER;
 	}
 
 	active_scan = scan_type == BT_HCI_LE_SCAN_ACTIVE;
@@ -628,6 +628,7 @@ void bt_hci_le_per_adv_report(struct net_buf *buf)
 	info.rssi = evt->rssi;
 	info.cte_type = BIT(evt->cte_type);
 	info.addr = &per_adv_sync->addr;
+	info.sid = per_adv_sync->sid;
 
 	SYS_SLIST_FOR_EACH_CONTAINER(&pa_sync_cbs, listener, node) {
 		if (listener->recv) {
@@ -668,6 +669,7 @@ void bt_hci_le_per_adv_sync_established(struct net_buf *buf)
 	struct bt_le_per_adv_sync_synced_info sync_info;
 	struct bt_le_per_adv_sync *pending_per_adv_sync;
 	struct bt_le_per_adv_sync_cb *listener;
+	bool unexpected_evt;
 	int err;
 
 	pending_per_adv_sync = get_pending_per_adv_sync();
@@ -694,23 +696,32 @@ void bt_hci_le_per_adv_sync_established(struct net_buf *buf)
 	}
 
 	if (!pending_per_adv_sync ||
-	    pending_per_adv_sync->sid != evt->sid ||
-	    bt_addr_le_cmp(&pending_per_adv_sync->addr, &evt->adv_addr)) {
-		struct bt_le_per_adv_sync_term_info term_info;
-
+	    (!atomic_test_bit(pending_per_adv_sync->flags,
+			      BT_PER_ADV_SYNC_SYNCING_USE_LIST) &&
+	     ((pending_per_adv_sync->sid != evt->sid) ||
+	      bt_addr_le_cmp(&pending_per_adv_sync->addr, &evt->adv_addr)))) {
 		BT_ERR("Unexpected per adv sync established event");
+		/* Request terminate of pending periodic advertising in controller */
 		per_adv_sync_terminate(sys_le16_to_cpu(evt->handle));
 
+		unexpected_evt = true;
+	} else {
+		unexpected_evt = false;
+	}
+
+	if (unexpected_evt || evt->status != BT_HCI_ERR_SUCCESS) {
 		if (pending_per_adv_sync) {
+			struct bt_le_per_adv_sync_term_info term_info;
+
 			/* Terminate the pending PA sync and notify app */
 			term_info.addr = &pending_per_adv_sync->addr;
 			term_info.sid = pending_per_adv_sync->sid;
+			term_info.reason = unexpected_evt ? BT_HCI_ERR_UNSPECIFIED : evt->status;
 
 			/* Deleting before callback, so the caller will be able
 			 * to restart sync in the callback.
 			 */
 			per_adv_sync_delete(pending_per_adv_sync);
-
 
 			SYS_SLIST_FOR_EACH_CONTAINER(&pa_sync_cbs,
 						     listener,
@@ -767,6 +778,8 @@ void bt_hci_le_per_adv_sync_lost(struct net_buf *buf)
 
 	term_info.addr = &per_adv_sync->addr;
 	term_info.sid = per_adv_sync->sid;
+	/* There is no status in the per. adv. sync lost event */
+	term_info.reason = BT_HCI_ERR_UNSPECIFIED;
 
 	/* Deleting before callback, so the caller will be able to restart
 	 * sync in the callback
@@ -935,7 +948,7 @@ static bool valid_le_scan_param(const struct bt_le_scan_param *param)
 	}
 
 	if (param->options & ~(BT_LE_SCAN_OPT_FILTER_DUPLICATE |
-			       BT_LE_SCAN_OPT_FILTER_WHITELIST |
+			       BT_LE_SCAN_OPT_FILTER_ACCEPT_LIST |
 			       BT_LE_SCAN_OPT_CODED |
 			       BT_LE_SCAN_OPT_NO_1M)) {
 		return false;
@@ -989,10 +1002,10 @@ int bt_le_scan_start(const struct bt_le_scan_param *param, bt_le_scan_cb_t cb)
 	atomic_set_bit_to(bt_dev.flags, BT_DEV_SCAN_FILTER_DUP,
 			  param->options & BT_LE_SCAN_OPT_FILTER_DUPLICATE);
 
-#if defined(CONFIG_BT_WHITELIST)
-	atomic_set_bit_to(bt_dev.flags, BT_DEV_SCAN_WL,
-			  param->options & BT_LE_SCAN_OPT_FILTER_WHITELIST);
-#endif /* defined(CONFIG_BT_WHITELIST) */
+#if defined(CONFIG_BT_FILTER_ACCEPT_LIST)
+	atomic_set_bit_to(bt_dev.flags, BT_DEV_SCAN_FILTERED,
+			  param->options & BT_LE_SCAN_OPT_FILTER_ACCEPT_LIST);
+#endif /* defined(CONFIG_BT_FILTER_ACCEPT_LIST) */
 
 	if (IS_ENABLED(CONFIG_BT_EXT_ADV) &&
 	    BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
@@ -1161,6 +1174,9 @@ int bt_le_per_adv_sync_create(const struct bt_le_per_adv_sync_param *param,
 	bt_addr_le_copy(&cp->addr, &param->addr);
 
 	if (param->options & BT_LE_PER_ADV_SYNC_OPT_USE_PER_ADV_LIST) {
+		atomic_set_bit(per_adv_sync->flags,
+			       BT_PER_ADV_SYNC_SYNCING_USE_LIST);
+
 		cp->options |= BT_HCI_LE_PER_ADV_CREATE_SYNC_FP_USE_LIST;
 	}
 
