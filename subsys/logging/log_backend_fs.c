@@ -260,6 +260,7 @@ static int allocate_new_file(struct fs_file_t *file)
 	int curr_file_num;
 	struct fs_dirent ent;
 	char fname[MAX_PATH_LEN];
+	fs_mode_t file_open_flags = FS_O_CREATE | FS_O_WRITE;
 
 	assert(file);
 
@@ -337,10 +338,8 @@ static int allocate_new_file(struct fs_file_t *file)
 		curr_file_num = newest;
 
 		if (file_ctr >= 1) {
-			curr_file_num++;
-			if (curr_file_num > MAX_FILE_NUMERAL) {
-				curr_file_num = 0;
-			}
+			--file_ctr; // same file will open
+			file_open_flags = FS_O_APPEND | FS_O_WRITE;
 		}
 
 		backend_state = BACKEND_FS_OK;
@@ -383,7 +382,7 @@ static int allocate_new_file(struct fs_file_t *file)
 		CONFIG_LOG_BACKEND_FS_DIR,
 		CONFIG_LOG_BACKEND_FS_FILE_PREFIX, curr_file_num);
 
-	rc = fs_open(file, fname, FS_O_CREATE | FS_O_WRITE);
+	rc = fs_open(file, fname, file_open_flags);
 	if (rc < 0) {
 		goto out;
 	}
