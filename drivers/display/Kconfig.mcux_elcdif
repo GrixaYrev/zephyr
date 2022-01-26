@@ -174,7 +174,7 @@ config  MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
 config  MCUX_ELCDIF_PANEL_PIXEL_FMT
   int "Display pixel format"
   range MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888  MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
-  def_int MCUX_ELCDIF_PANEL_PIXEL_FMT_BGR565
+  def_int MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB565
   help
     Available values:
      0  - MCUX_ELCDIF_PANEL_PIXEL_FMT_RGB888    - color RGB 888
@@ -263,5 +263,9 @@ config MCUX_ELCDIF_PANEL_ORIENTATION_ROTATED_270
   help
     Panel rotated 270 degrees clockwise (90 counterclockwise)
 endchoice
+
+config DISPLAY_MCUX_PXP
+  bool "Use PXP module"
+  default n
 
 endif # DISPLAY_MCUX_ELCDIF
