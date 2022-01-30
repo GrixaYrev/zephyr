@@ -136,6 +136,7 @@ struct eth_context {
 	bool enabled;
 	bool link_up;
 	uint32_t phy_addr;
+	uint32_t phy_startup_delay;
 	phy_duplex_t phy_duplex;
 	phy_speed_t phy_speed;
 	uint8_t mac_addr[6];
@@ -951,6 +952,10 @@ static void eth_mcux_init(const struct device *dev)
 			kENET_RxAccelProtoCheckEnabled;
 	}
 
+	if (context->phy_startup_delay > 0) {
+		k_sleep(K_MSEC(context->phy_startup_delay));
+	}
+
 	ENET_Init(context->base,
 		  &context->enet_handle,
 		  &enet_config,
@@ -1349,7 +1354,8 @@ static void eth_mcux_err_isr(const struct device *dev)
 	static struct eth_context eth##n##_context = {			\
 		.base = (ENET_Type *)DT_INST_REG_ADDR(n),		\
 		.config_func = eth##n##_config_func,			\
-		.phy_addr = 0U,						\
+		.phy_addr = DT_INST_PROP_OR(n, phy_address, 0),		\
+		.phy_startup_delay = DT_INST_PROP_OR(n, phy_startup_delay, 0),	\
 		.phy_duplex = kPHY_FullDuplex,				\
 		.phy_speed = kPHY_Speed100M,				\
 		ETH_MCUX_MAC_ADDR(n)					\

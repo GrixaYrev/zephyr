@@ -12,3 +12,14 @@ properties:
       required: true
     interrupts:
       required: true
+
+    phy-address:
+      type: int
+      required: false
+      description: Address of PHY for SMI
+
+    phy-startup-delay:
+      type: int
+      required: false
+      description: Delay (ms) after reset before SMI init
+
