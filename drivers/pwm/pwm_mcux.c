@@ -90,7 +90,7 @@ static int mcux_pwm_pin_set(const struct device *dev, uint32_t pwm,
 		data->channel[pwm].dutyCyclePercent = duty_cycle;
 
 		status = PWM_SetupPwm(config->base, config->index,
-				      &data->channel[0], CHANNEL_COUNT,
+				      &data->channel[pwm], 1,
 				      config->mode, pwm_freq, clock_freq);
 		if (status != kStatus_Success) {
 			LOG_ERR("Could not set up pwm");
