@@ -91,7 +91,7 @@ manifest:
         - hal
     - name: hal_nxp
       repo-path: zephyr/modules-rtos/hal-nxp
-      revision: 1551621976384bb1781f0fef18c809636cfa0976
+      revision: 90e44c6a33a2be1c9f146b6f138b0ac9215b1ee6
       path: modules/hal/nxp
       remote: strim-git
       groups:

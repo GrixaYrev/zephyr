@@ -339,6 +339,9 @@ static int mcux_flexcan_send(const struct device *dev,
 		}
 	}
 
+	// TODO: для отладки, потом убрать
+	data->tx_cbs[alloc].status = -666;
+
 	mcux_flexcan_copy_zframe_to_frame(msg, &data->tx_cbs[alloc].frame);
 	data->tx_cbs[alloc].function = callback_isr;
 	data->tx_cbs[alloc].arg = callback_arg;
@@ -608,7 +611,7 @@ static inline void mcux_flexcan_transfer_tx_idle(const struct device *dev,
 }
 
 static inline void mcux_flexcan_transfer_rx_idle(const struct device *dev,
-						 uint32_t mb)
+						 uint32_t mb, uint32_t empty)
 {
 	const struct mcux_flexcan_config *config = dev->config;
 	struct mcux_flexcan_data *data = dev->data;
@@ -624,9 +627,11 @@ static inline void mcux_flexcan_transfer_rx_idle(const struct device *dev,
 	arg = data->rx_cbs[alloc].arg;
 
 	if (atomic_test_bit(data->rx_allocs, alloc)) {
-		mcux_flexcan_copy_frame_to_zframe(&data->rx_cbs[alloc].frame,
-						  &frame);
-		function(&frame, arg);
+		if (!empty) {
+			mcux_flexcan_copy_frame_to_zframe(&data->rx_cbs[alloc].frame,
+								&frame);
+			function(&frame, arg);
+		}
 
 		/* Setup RX message buffer to receive next message */
 		FLEXCAN_SetRxMbConfig(config->base, mb,
@@ -663,7 +668,12 @@ static FLEXCAN_CALLBACK(mcux_flexcan_transfer_callback)
 		__fallthrough;
 	case kStatus_FLEXCAN_RxIdle:
 		/* The result field is a MB value which is limited to 32bit value */
-		mcux_flexcan_transfer_rx_idle(data->dev, (uint32_t)result);
+		mcux_flexcan_transfer_rx_idle(data->dev, (uint32_t)result, false);
+		break;
+	case kStatus_FLEXCAN_RxEmpty:
+		/* Restart after unknown interrupt */
+		mcux_flexcan_transfer_rx_idle(data->dev, (uint32_t)result, true);
+		LOG_INF("interrupt by empty mb %d", (uint32_t)result);
 		break;
 	default:
 		LOG_WRN("Unhandled error/status (status 0x%08x, "
