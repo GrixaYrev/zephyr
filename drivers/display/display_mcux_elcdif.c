@@ -350,14 +350,39 @@ static int mcux_elcdif_write(const struct device *dev, const uint16_t x,
 	k_sem_take(&data->sem, K_FOREVER);
 	// duplicate read buffer if only part of the screen need to refresh
 	// else - write buffer will be filled by new data
-	if(data->fb_bytes != desc->buf_size)
+	if(data->fb_bytes > desc->buf_size)
 	{
-		memcpy(data->fb[write_idx].data, data->fb[read_idx].data,
-					data->fb_bytes);
+		if (((data->fb_bytes % sizeof(uint32_t)) != 0)
+			|| ((((uint32_t)data->fb[write_idx].data) % sizeof(uint32_t)) != 0))
+		{
+			memcpy(data->fb[write_idx].data, 
+			       data->fb[read_idx].data,
+					   data->fb_bytes);
+		}
+		else
+		{
+			uint32_t * wr= data->fb[write_idx].data;
+			uint32_t * end = wr + (data->fb_bytes / sizeof(uint32_t));
+			uint32_t * rd = data->fb[read_idx].data;
+			while (wr < end)
+			{
+				*wr++ = *rd++;
+			}
+		}
 #if defined(CONFIG_HAS_MCUX_CACHE) && defined(CONFIG_DISPLAY_MCUX_PXP)
 		DCACHE_CleanByRange((uint32_t) data->fb[write_idx].data,
 						data->fb_bytes);
 #endif
+	}
+	else if (data->fb_bytes < desc->buf_size)
+	{
+		LOG_ERR("try write too large buffer: %u bytes", desc->buf_size);
+		k_sleep(K_MSEC(500));
+		volatile int32_t sense = false;
+		while (!sense)
+		{
+			__NOP();
+		}
 	}
 
 	// end_time = timing_counter_get();
